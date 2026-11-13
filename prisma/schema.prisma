@@ -1,0 +1,254 @@
+// Sangeetha Mobiles – Store Launch Tracker
+// Tables follow "Database tables" in the project spec (11 Nov 2026).
+// Module-specific fields live in StoreModule.details (JSONB), validated against
+// ModuleTemplate.fieldSchema, so new modules/fields need no schema change.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  REGIONAL_MANAGER
+  STORE_OWNER
+}
+
+enum StoreType {
+  OWN
+  FRANCHISE
+}
+
+enum Floor {
+  GROUND
+  FIRST
+  OTHER
+}
+
+enum OverallStatus {
+  LOCATION_FINALISED
+  TOKEN_PAID
+  KEYS_RECEIVED
+  FITOUT_IN_PROGRESS
+  READY_FOR_LAUNCH
+  LAUNCHED
+  ON_HOLD
+  DROPPED
+}
+
+enum ModuleStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  phone        String?  @unique
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role
+  /// Regional Manager scope: state codes (e.g. "KA", "TN"). Empty for other roles.
+  regionStates String[] @default([]) @map("region_states")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ownedStores         Store[]        @relation("StoreOwner")
+  approvedModules     StoreModule[]  @relation("ModuleApprover")
+  updatedModules      StoreModule[]  @relation("ModuleUpdater")
+  uploadedAttachments Attachment[]
+  comments            Comment[]
+  notifications       Notification[]
+  activity            ActivityLog[]
+
+  @@map("users")
+}
+
+model Store {
+  id               String         @id @default(uuid()) @db.Uuid
+  /// SGM-<STATE>-<CITY>-<NNNN>, e.g. SGM-KA-BLR-0142
+  storeCode        String         @unique @map("store_code")
+  name             String
+  /// State/UT code from the fixed list in src/lib/india-states.ts
+  state            String
+  city             String
+  area             String?
+  pincode          String?
+  address          String?
+  lat              Decimal?       @db.Decimal(9, 6)
+  lng              Decimal?       @db.Decimal(9, 6)
+  storeType        StoreType?     @map("store_type")
+  carpetAreaSqft   Int?           @map("carpet_area_sqft")
+  floor            Floor?
+  ownerId          String         @map("owner_id") @db.Uuid
+  owner            User           @relation("StoreOwner", fields: [ownerId], references: [id])
+  targetLaunchDate DateTime?      @map("target_launch_date") @db.Date
+  keyHandoverDate  DateTime?      @map("key_handover_date") @db.Date
+  actualLaunchDate DateTime?      @map("actual_launch_date") @db.Date
+  /// Null until the first milestone (Location Finalised) is reached — see REQUIREMENTS.md Q-STATUS-NEW.
+  overallStatus    OverallStatus? @map("overall_status")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  modules       StoreModule[]
+  notifications Notification[]
+  activity      ActivityLog[]
+
+  @@index([ownerId])
+  @@index([state, city])
+  @@index([overallStatus])
+  @@map("stores")
+}
+
+model ModuleTemplate {
+  id                     String  @id @default(uuid()) @db.Uuid
+  /// Stable key, e.g. "STORE_LOCATION". String (not enum) so modules can be added without a migration.
+  moduleType             String  @unique @map("module_type")
+  displayName            String  @map("display_name")
+  sortOrder              Int     @map("sort_order")
+  /// Days after key handover. Null for modules not scheduled from handover.
+  defaultStartOffsetDays Int?    @map("default_start_offset_days")
+  defaultDurationDays    Int?    @map("default_duration_days")
+  fieldSchema            Json    @map("field_schema")
+  minPhotos              Int     @default(1) @map("min_photos")
+  /// Key Handover is a milestone, not a module: excluded from progress and approvals.
+  isMilestone            Boolean @default(false) @map("is_milestone")
+  /// Attachment tag that counts toward minPhotos; null = any photo on the module.
+  photoTag               String? @map("photo_tag")
+
+  @@map("module_templates")
+}
+
+/// Uploaded file contents (demo storage that works on serverless hosting; see src/lib/storage.ts).
+model FileBlob {
+  key       String   @id
+  data      Bytes
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("file_blobs")
+}
+
+/// Small key/value store for configurable settings (e.g. target launch offset, last overdue check).
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_settings")
+}
+
+model StoreModule {
+  id              String         @id @default(uuid()) @db.Uuid
+  storeId         String         @map("store_id") @db.Uuid
+  store           Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  moduleType      String         @map("module_type")
+  status          ModuleStatus   @default(NOT_STARTED)
+  blockerReason   String?        @map("blocker_reason")
+  plannedStart    DateTime?      @map("planned_start") @db.Date
+  plannedEnd      DateTime?      @map("planned_end") @db.Date
+  actualStart     DateTime?      @map("actual_start") @db.Date
+  actualEnd       DateTime?      @map("actual_end") @db.Date
+  vendorName      String?        @map("vendor_name")
+  vendorPhone     String?        @map("vendor_phone")
+  estCost         Decimal?       @map("est_cost") @db.Decimal(14, 2)
+  actualCost      Decimal?       @map("actual_cost") @db.Decimal(14, 2)
+  details         Json           @default("{}")
+  remarks         String?
+  approvalStatus  ApprovalStatus @default(PENDING) @map("approval_status")
+  approvedById    String?        @map("approved_by") @db.Uuid
+  approvedBy      User?          @relation("ModuleApprover", fields: [approvedById], references: [id])
+  approvalComment String?        @map("approval_comment")
+  updatedById     String?        @map("updated_by") @db.Uuid
+  updatedBy       User?          @relation("ModuleUpdater", fields: [updatedById], references: [id])
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// When the module was last marked Completed (orders the approvals queue).
+  completedAt     DateTime?      @map("completed_at") @db.Timestamptz(6)
+  approvedAt      DateTime?      @map("approved_at") @db.Timestamptz(6)
+
+  attachments   Attachment[]
+  comments      Comment[]
+  notifications Notification[]
+  activity      ActivityLog[]
+
+  @@unique([storeId, moduleType])
+  @@index([status, approvalStatus])
+  @@map("store_modules")
+}
+
+model Attachment {
+  id            String      @id @default(uuid()) @db.Uuid
+  storeModuleId String      @map("store_module_id") @db.Uuid
+  storeModule   StoreModule @relation(fields: [storeModuleId], references: [id], onDelete: Cascade)
+  /// Storage key (local disk in the demo; see src/lib/storage.ts). Served only via /api/files/:id.
+  fileUrl       String      @map("file_url")
+  fileType      String      @map("file_type")
+  fileName      String      @default("") @map("file_name")
+  sizeBytes     Int         @default(0) @map("size_bytes")
+  /// e.g. "photo_before", "photo_during", "photo_after", "invoice", "document"
+  tag           String?
+  uploadedById  String      @map("uploaded_by") @db.Uuid
+  uploadedBy    User        @relation(fields: [uploadedById], references: [id])
+  uploadedAt    DateTime    @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+
+  @@index([storeModuleId])
+  @@map("attachments")
+}
+
+model Comment {
+  id            String      @id @default(uuid()) @db.Uuid
+  storeModuleId String      @map("store_module_id") @db.Uuid
+  storeModule   StoreModule @relation(fields: [storeModuleId], references: [id], onDelete: Cascade)
+  userId        String      @map("user_id") @db.Uuid
+  user          User        @relation(fields: [userId], references: [id])
+  text          String
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([storeModuleId, createdAt])
+  @@map("comments")
+}
+
+model Notification {
+  id            String       @id @default(uuid()) @db.Uuid
+  userId        String       @map("user_id") @db.Uuid
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String
+  storeId       String?      @map("store_id") @db.Uuid
+  store         Store?       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeModuleId String?      @map("store_module_id") @db.Uuid
+  storeModule   StoreModule? @relation(fields: [storeModuleId], references: [id], onDelete: Cascade)
+  message       String
+  isRead        Boolean      @default(false) @map("is_read")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id            String       @id @default(uuid()) @db.Uuid
+  storeId       String?      @map("store_id") @db.Uuid
+  store         Store?       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeModuleId String?      @map("store_module_id") @db.Uuid
+  storeModule   StoreModule? @relation(fields: [storeModuleId], references: [id], onDelete: Cascade)
+  userId        String?      @map("user_id") @db.Uuid
+  user          User?        @relation(fields: [userId], references: [id])
+  action        String
+  oldValue      Json?        @map("old_value")
+  newValue      Json?        @map("new_value")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([storeId, createdAt])
+  @@map("activity_log")
+}
