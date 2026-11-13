@@ -18,7 +18,7 @@ export function StoreGrid({ stores, names }: { stores: StoreSummary[]; names: Re
       <table className="w-full min-w-[980px] text-sm">
         <thead>
           <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
-            <th className="sticky left-0 z-10 bg-muted/95 px-4 py-2.5 font-medium">Store</th>
+            <th className="sticky left-0 z-10 min-w-60 bg-muted/95 px-4 py-2.5 font-medium">Store</th>
             <th className="px-3 py-2.5 font-medium">Status</th>
             <th className="px-3 py-2.5 font-medium">Progress</th>
             {columns.map((c) => (

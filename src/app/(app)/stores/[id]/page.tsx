@@ -84,7 +84,7 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
             </p>
             <p className="mt-1 text-lg font-semibold">{formatDate(store.keyHandoverDate)}</p>
             <p className="text-xs text-muted-foreground">
-              {store.daysSinceHandover !== null ? `${store.daysSinceHandover} days since handover` : store.actualLaunchDate ? "Store launched" : "Keys not received yet"}
+              {store.daysSinceHandover !== null ? `${store.daysSinceHandover} day${store.daysSinceHandover === 1 ? "" : "s"} since handover` : store.actualLaunchDate ? "Store launched" : "Keys not received yet"}
             </p>
           </CardContent>
         </Card>

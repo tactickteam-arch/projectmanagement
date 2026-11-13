@@ -92,7 +92,7 @@ export default async function HqDashboard({ searchParams }: PageProps<"/hq">) {
         <StatCard label="Awaiting approval" value={summary.pendingApprovals} hint="Modules marked Completed" icon={<ClipboardCheck className="size-4" />} href="/hq/approvals" />
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_340px]">
+      <div className="mt-6 space-y-6">
         <section aria-labelledby="grid-title" className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <h2 id="grid-title" className="font-semibold">
@@ -107,7 +107,7 @@ export default async function HqDashboard({ searchParams }: PageProps<"/hq">) {
             <EmptyState title="No stores match these filters">Try clearing a filter or searching for a different store.</EmptyState>
           )}
         </section>
-        <aside className="space-y-6">
+        <aside className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Pipeline by stage</CardTitle>

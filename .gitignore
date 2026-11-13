@@ -32,3 +32,10 @@ npm-debug.log*
 
 # Local uploaded files (demo storage)
 storage/
+
+.vercel
+
+# Demo material (local only)
+demo-screenshots/
+*.pptx
+*.jpeg

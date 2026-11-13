@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+storage
+.next
+node_modules
+src/generated
+*.jpeg
+*.jpg
+*.docx
+*.pptx
+tests

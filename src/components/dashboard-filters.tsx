@@ -41,22 +41,16 @@ export function DashboardFilters({ owners, cities }: { owners: { id: string; nam
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search code or name" className="pl-8" aria-label="Search by store code or name" />
       </div>
       <FilterSelect label="State" value={params.get("state")} onChange={(v) => set("state", v)} options={INDIA_STATES.map((s) => ({ value: s.code, label: s.name }))} />
-      <FilterSelect label="City" value={params.get("city")} onChange={(v) => set("city", v)} options={cities.map((c) => ({ value: c, label: c }))} />
+      <FilterSelect label="City" allLabel="All cities" value={params.get("city")} onChange={(v) => set("city", v)} options={cities.map((c) => ({ value: c, label: c }))} />
       <FilterSelect
         label="Status"
+        allLabel="All statuses"
         value={params.get("status")}
         onChange={(v) => set("status", v)}
         options={[{ value: "NONE", label: "Not yet finalised" }, ...OVERALL_STATUS_ORDER.map((s) => ({ value: s, label: OVERALL_STATUS_LABELS[s] }))]}
       />
       <FilterSelect label="Store owner" value={params.get("ownerId")} onChange={(v) => set("ownerId", v)} options={owners.map((o) => ({ value: o.id, label: o.name }))} />
-      <Input
-        type="month"
-        value={params.get("launchMonth") ?? ""}
-        onChange={(e) => set("launchMonth", e.target.value || null)}
-        className="w-40"
-        aria-label="Launch month"
-        title="Launch month (target, or actual once launched)"
-      />
+      <FilterSelect label="Launch month" allLabel="Any launch month" value={params.get("launchMonth")} onChange={(v) => set("launchMonth", v)} options={launchMonths()} />
       <FilterSelect
         label="Sort"
         value={params.get("sort")}
@@ -83,6 +77,18 @@ export function DashboardFilters({ owners, cities }: { owners: { id: string; nam
       )}
     </div>
   );
+}
+
+/** Launch-month choices: 3 months back to 12 months ahead. */
+function launchMonths(): { value: string; label: string }[] {
+  const now = new Date();
+  return Array.from({ length: 16 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 3 + i, 1);
+    return {
+      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: `Launch: ${d.toLocaleString("en-IN", { month: "short", year: "numeric" })}`,
+    };
+  });
 }
 
 function FilterSelect({

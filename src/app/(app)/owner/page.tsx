@@ -60,7 +60,7 @@ export default async function OwnerHome() {
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <KeyRound className="size-3.5" aria-hidden />
-                    {s.daysSinceHandover !== null ? `${s.daysSinceHandover} days since key handover` : s.actualLaunchDate ? `Launched ${formatDate(s.actualLaunchDate)}` : "Keys not received yet"}
+                    {s.daysSinceHandover !== null ? `${s.daysSinceHandover} day${s.daysSinceHandover === 1 ? "" : "s"} since key handover` : s.actualLaunchDate ? `Launched ${formatDate(s.actualLaunchDate)}` : "Keys not received yet"}
                   </span>
                   {s.overdueCount > 0 && (
                     <span className="flex items-center gap-1 font-medium text-red-600">
