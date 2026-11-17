@@ -4,7 +4,7 @@
 It **replaces** the earlier *New Store Setup Management System* spec (10 Nov) and all decisions made against it (owner decision, 11 Nov 2026).
 
 Labels: **CONFIRMED** (spec or owner decision) · **PROPOSED** (needs approval) · **OPEN** (question outstanding).
-Last updated: 11 Nov 2026
+Last updated: 17 Nov 2026
 
 ---
 
@@ -17,6 +17,24 @@ Last updated: 11 Nov 2026
 | D3 | 11 Nov | Database: the existing Supabase project (ieirkeldjwmfgydtaamr, Seoul region). Mumbai not required by the new spec. |
 | D4 | 11 Nov | Regional Manager role included in the schema now; who may approve is still open (Q3). |
 | D5 | 11 Nov | Prisma 7.10.1 (latest stable; 8.0 is a release candidate), Next.js 16.4.3, custom JWT sessions as per spec. |
+| D6 | 17 Nov | The *New outlet launch: user flow* diagram replaces the spec's 7 modules + Key Handover. There are now 13 steps: 1 Location filing, 2 8-point landlord check, 3 Token advance (+ APX PO), 4 Legal agreement and statutory, 5 Key received, 6 eight parallel department tracks, then 7 Soft launch. Each step has teams that fill it in and an optional approver team (Boss + CEO, RK, Accounts). New role "Sangeetha team" with teams. The open points are in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) #1–17. |
+
+---
+
+## Launch flow (17 Nov) — implemented and tested
+
+| Item | Where | Tested how |
+|---|---|---|
+| 13 steps as config: who does each step, the teams that fill it in, approver team, points and owners, prerequisites, system actions | `src/modules/*.ts`, `src/lib/teams.ts` | Unit tests; E2E |
+| Teams on users, the "Sangeetha team" role, and permissions per step (fill in / approve) | `src/lib/auth/permissions.ts`, migration `20261117000000_launch_flow` | Unit tests; E2E: wrong team gets 403 at every step |
+| Prerequisites, points/checklist/required-field/photo rules on completion | `src/lib/module-rules.ts` | Unit tests; E2E |
+| Steps without an approver go green when done; send-back returns the step to In Progress with a comment | `src/lib/services/modules.ts` | E2E |
+| APX PO number recorded after Token advance approval | `api/modules/:id/after-approval` | E2E |
+| RK accepting the handover sets Day 0, schedules the 8 tracks and notifies every department | `afterStepDone` in `src/lib/services/modules.ts` | E2E |
+| Launch flow page, My tasks, approvals queue per team, store × step grid, Settings (teams, steps & approvals, checklists) | `src/components/launch-flow.tsx`, `src/app/(app)/tasks`, `hq/approvals`, `hq/settings` | E2E: every page for every role |
+| Upgrade of existing data (`npm run db:sync-steps`) | `src/lib/steps-sync.ts` | Ran on a copy of the old demo database: old stores got the new steps, recorded handovers kept |
+
+The phase tables below describe the original 11 Nov build. Where they mention modules, read "steps" (D6).
 
 ---
 

@@ -11,6 +11,7 @@ export const metadata = { title: "Map view" };
 const COLORS: Record<OverallStatus | "NONE", string> = {
   NONE: "#9ca3af",
   LOCATION_FINALISED: "#64748b",
+  PREMISES_CLEARED: "#8b5cf6",
   TOKEN_PAID: "#6366f1",
   KEYS_RECEIVED: "#0ea5e9",
   FITOUT_IN_PROGRESS: "#f59e0b",
@@ -21,7 +22,7 @@ const COLORS: Record<OverallStatus | "NONE", string> = {
 };
 
 export default async function MapPage() {
-  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER"]);
+  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER", "TEAM_MEMBER"]);
   const stores = await listStoreSummaries(user);
   const pinned = stores.filter((s) => s.lat !== null && s.lng !== null);
   const missing = stores.filter((s) => s.lat === null || s.lng === null);
@@ -34,7 +35,7 @@ export default async function MapPage() {
         {used.map((s) => (
           <span key={s} className="flex items-center gap-1.5">
             <span className="inline-block size-3 rounded-full" style={{ background: COLORS[s] }} aria-hidden />
-            {s === "NONE" ? "Not yet finalised" : OVERALL_STATUS_LABELS[s]}
+            {s === "NONE" ? "Location filing" : OVERALL_STATUS_LABELS[s]}
           </span>
         ))}
       </div>
@@ -47,7 +48,7 @@ export default async function MapPage() {
           lat: s.lat as number,
           lng: s.lng as number,
           progress: s.progressPercent,
-          statusLabel: s.overallStatus ? OVERALL_STATUS_LABELS[s.overallStatus] : "Not yet finalised",
+          statusLabel: s.overallStatus ? OVERALL_STATUS_LABELS[s.overallStatus] : "Location filing",
           color: COLORS[s.overallStatus ?? "NONE"],
         }))}
       />

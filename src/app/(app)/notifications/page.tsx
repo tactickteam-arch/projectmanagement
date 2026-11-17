@@ -20,9 +20,7 @@ export default async function NotificationsPage() {
           createdAt: n.createdAt.toISOString(),
           href: n.storeId
             ? n.storeModule
-              ? n.storeModule.moduleType === "KEY_HANDOVER"
-                ? `/stores/${n.storeId}/key-handover`
-                : `/stores/${n.storeId}/modules/${n.storeModule.moduleType}`
+              ? `/stores/${n.storeId}/modules/${n.storeModule.moduleType}`
               : `/stores/${n.storeId}`
             : n.type === "overdue_summary"
               ? "/hq/reports/delays"

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseDateOnly } from "../src/lib/dates";
 import { computeOverallStatus, computeProgressPercent, daysOverdue, isOverdue, type ModuleState } from "../src/lib/status";
-import { MODULE_DEFINITIONS } from "../src/modules";
+import { MODULE_DEFINITIONS, SETUP_TRACK_TYPES } from "../src/modules";
 
 const notStarted = (): ModuleState[] =>
   MODULE_DEFINITIONS.map((m) => ({ moduleType: m.moduleType, status: "NOT_STARTED", approvalStatus: "PENDING" }));
@@ -10,55 +10,60 @@ const notStarted = (): ModuleState[] =>
 function withModule(mods: ModuleState[], type: string, patch: Partial<ModuleState>): ModuleState[] {
   return mods.map((m) => (m.moduleType === type ? { ...m, ...patch } : m));
 }
+const withDone = (mods: ModuleState[], ...types: string[]) => types.reduce((acc, t) => withModule(acc, t, approved), mods);
 
 const approved: Partial<ModuleState> = { status: "COMPLETED", approvalStatus: "APPROVED" };
 const blankStore = { overallStatus: null, keyHandoverDate: null, actualLaunchDate: null };
-const allSetupApproved = () => notStarted().map((m) => (m.moduleType === "KEY_HANDOVER" ? { ...m, status: "COMPLETED" as const } : { ...m, ...approved }));
+const keysStore = { ...blankStore, keyHandoverDate: parseDateOnly("2026-11-01") };
+const allDone = () => notStarted().map((m) => ({ ...m, ...approved }));
 
-describe("computeOverallStatus (spec: Overall status rules)", () => {
-  it("is null for a brand-new store", () => {
+describe("computeOverallStatus (launch flow)", () => {
+  it("is null (location filing) for a brand-new store", () => {
     assert.equal(computeOverallStatus(blankStore, notStarted()), null);
   });
 
-  it("Location Finalised needs Store Location approved, not just completed", () => {
-    let mods = withModule(notStarted(), "STORE_LOCATION", { status: "COMPLETED", approvalStatus: "PENDING" });
-    assert.equal(computeOverallStatus(blankStore, mods), null);
-    mods = withModule(notStarted(), "STORE_LOCATION", approved);
-    assert.equal(computeOverallStatus(blankStore, mods), "LOCATION_FINALISED");
+  it("Location approved needs step 1 approved by Boss + CEO, not just completed", () => {
+    assert.equal(computeOverallStatus(blankStore, withModule(notStarted(), "LOCATION_FILING", { status: "COMPLETED", approvalStatus: "PENDING" })), null);
+    assert.equal(computeOverallStatus(blankStore, withDone(notStarted(), "LOCATION_FILING")), "LOCATION_FINALISED");
   });
 
-  it("Token Paid when Token Advance is Completed", () => {
-    let mods = withModule(notStarted(), "STORE_LOCATION", approved);
-    mods = withModule(mods, "TOKEN_ADVANCE", { status: "COMPLETED", approvalStatus: "PENDING" });
+  it("Landlord check cleared once RK approves step 2", () => {
+    assert.equal(computeOverallStatus(blankStore, withDone(notStarted(), "LOCATION_FILING", "LANDLORD_CHECK")), "PREMISES_CLEARED");
+  });
+
+  it("Token paid only once Accounts approves the advance (step 3)", () => {
+    let mods = withDone(notStarted(), "LOCATION_FILING", "LANDLORD_CHECK");
+    assert.equal(computeOverallStatus(blankStore, withModule(mods, "TOKEN_ADVANCE", { status: "COMPLETED", approvalStatus: "PENDING" })), "PREMISES_CLEARED");
+    mods = withDone(mods, "TOKEN_ADVANCE");
     assert.equal(computeOverallStatus(blankStore, mods), "TOKEN_PAID");
   });
 
-  it("Keys Received when key handover date is entered", () => {
-    const store = { ...blankStore, keyHandoverDate: parseDateOnly("2026-11-01") };
-    assert.equal(computeOverallStatus(store, notStarted()), "KEYS_RECEIVED");
+  it("Keys received once RK accepts the handover (Day 0 set)", () => {
+    assert.equal(computeOverallStatus(keysStore, notStarted()), "KEYS_RECEIVED");
+    assert.equal(computeOverallStatus(blankStore, withDone(notStarted(), "KEY_HANDOVER")), "KEYS_RECEIVED");
   });
 
-  it("Fit-out in Progress when any fit-out module has started", () => {
-    const store = { ...blankStore, keyHandoverDate: parseDateOnly("2026-11-01") };
-    const mods = withModule(notStarted(), "AIR_CONDITIONING", { status: "IN_PROGRESS" });
-    assert.equal(computeOverallStatus(store, mods), "FITOUT_IN_PROGRESS");
+  it("Store setup in progress when any department track has started", () => {
+    assert.equal(computeOverallStatus(keysStore, withModule(notStarted(), "HR", { status: "IN_PROGRESS" })), "FITOUT_IN_PROGRESS");
+    // Legal (step 4) running alongside is not a department track
+    assert.equal(computeOverallStatus(keysStore, withModule(notStarted(), "LEGAL_STATUTORY", { status: "IN_PROGRESS" })), "KEYS_RECEIVED");
   });
 
-  it("starting a non-fit-out module does not count as fit-out", () => {
-    const mods = withModule(notStarted(), "KEY_HANDOVER", { status: "IN_PROGRESS" });
-    assert.equal(computeOverallStatus(blankStore, mods), null);
+  it("all departments green (Ready for Launch) needs every one of the 13 steps done", () => {
+    assert.equal(computeOverallStatus(keysStore, allDone()), "READY_FOR_LAUNCH");
+    for (const t of ["LEGAL_STATUTORY", ...SETUP_TRACK_TYPES]) {
+      const one = withModule(allDone(), t, { status: "IN_PROGRESS", approvalStatus: "PENDING" });
+      assert.notEqual(computeOverallStatus(keysStore, one), "READY_FOR_LAUNCH", t);
+    }
   });
 
-  it("Ready for Launch when all 7 setup modules are approved (Key Handover milestone not approved)", () => {
-    const store = { ...blankStore, keyHandoverDate: parseDateOnly("2026-11-01") };
-    assert.equal(computeOverallStatus(store, allSetupApproved()), "READY_FOR_LAUNCH");
-    const oneNotApproved = withModule(allSetupApproved(), "IT_WORKS", { approvalStatus: "PENDING" });
-    assert.equal(computeOverallStatus(store, oneNotApproved), "FITOUT_IN_PROGRESS");
+  it("ignores rows of retired module types", () => {
+    const mods = [...allDone(), { moduleType: "AIR_CONDITIONING", status: "NOT_STARTED" as const, approvalStatus: "PENDING" as const }];
+    assert.equal(computeOverallStatus(keysStore, mods), "READY_FOR_LAUNCH");
   });
 
-  it("Launched when actual launch date is entered", () => {
-    const store = { ...blankStore, actualLaunchDate: parseDateOnly("2026-11-10") };
-    assert.equal(computeOverallStatus(store, notStarted()), "LAUNCHED");
+  it("Soft launched when the actual launch date is entered", () => {
+    assert.equal(computeOverallStatus({ ...blankStore, actualLaunchDate: parseDateOnly("2026-11-10") }, notStarted()), "LAUNCHED");
   });
 
   it("keeps On Hold / Dropped set by HQ", () => {
@@ -69,18 +74,13 @@ describe("computeOverallStatus (spec: Overall status rules)", () => {
   });
 });
 
-describe("computeProgressPercent (spec: approved ÷ total × 100, 7 setup modules)", () => {
-  it("counts only approved setup modules", () => {
-    let mods = withModule(notStarted(), "STORE_LOCATION", approved);
-    mods = withModule(mods, "TOKEN_ADVANCE", { status: "COMPLETED", approvalStatus: "PENDING" });
-    assert.equal(computeProgressPercent(mods), 14); // 1 of 7 = 14.3
-    assert.equal(computeProgressPercent(allSetupApproved()), 100);
+describe("computeProgressPercent (steps done ÷ 13)", () => {
+  it("counts only done (approved) steps", () => {
+    let mods = withDone(notStarted(), "LOCATION_FILING");
+    mods = withModule(mods, "LANDLORD_CHECK", { status: "COMPLETED", approvalStatus: "PENDING" });
+    assert.equal(computeProgressPercent(mods), 8); // 1 of 13 = 7.7
+    assert.equal(computeProgressPercent(allDone()), 100);
     assert.equal(computeProgressPercent([]), 0);
-  });
-
-  it("the Key Handover milestone does not count", () => {
-    const mods = withModule(notStarted(), "KEY_HANDOVER", approved);
-    assert.equal(computeProgressPercent(mods), 0);
   });
 });
 

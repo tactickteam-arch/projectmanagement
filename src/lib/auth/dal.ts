@@ -11,6 +11,7 @@ export interface CurrentUser {
   email: string;
   role: Role;
   regionStates: string[];
+  teams: string[];
 }
 
 export class AuthError extends Error {
@@ -31,10 +32,10 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   if (!userId) return null;
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, email: true, role: true, regionStates: true, isActive: true },
+    select: { id: true, name: true, email: true, role: true, regionStates: true, teams: true, isActive: true },
   });
   if (!user || !user.isActive) return null;
-  return { id: user.id, name: user.name, email: user.email, role: user.role, regionStates: user.regionStates };
+  return { id: user.id, name: user.name, email: user.email, role: user.role, regionStates: user.regionStates, teams: user.teams };
 }
 
 /** For pages: redirect to /login when signed out, to the home page when the role is not allowed. */
@@ -54,5 +55,5 @@ export async function requireApiUser(roles?: readonly Role[]): Promise<CurrentUs
 }
 
 export function homePathFor(role: Role): string {
-  return role === "STORE_OWNER" ? "/owner" : "/hq";
+  return role === "STORE_OWNER" ? "/owner" : role === "TEAM_MEMBER" ? "/tasks" : "/hq";
 }

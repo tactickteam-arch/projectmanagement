@@ -4,16 +4,13 @@ import type { Prisma } from "@/generated/prisma/client";
 import { diff, logActivity } from "@/lib/activity";
 import type { CurrentUser } from "@/lib/auth/dal";
 import { can } from "@/lib/auth/permissions";
-import { addDays, parseDateOnly } from "@/lib/dates";
+import { parseDateOnly } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { badRequest, conflict, forbidden, notFound } from "@/lib/errors";
 import { isStateCode } from "@/lib/india-states";
-import { hqRecipients, notifyUsers } from "@/lib/notify";
-import { planModulesFromHandover } from "@/lib/scheduling";
-import { getTargetLaunchOffsetDays } from "@/lib/settings";
+import { hqRecipients, notifyUsers, teamRecipients } from "@/lib/notify";
 import { computeOverallStatus, OVERALL_STATUS_LABELS } from "@/lib/status";
 import { formatStoreCode, serialFromCode } from "@/lib/store-code";
-import { KEY_HANDOVER, TOKEN_ADVANCE } from "@/modules";
 
 type Tx = Prisma.TransactionClient;
 
@@ -64,7 +61,7 @@ export async function getStoreForUser(user: CurrentUser, storeId: string) {
   return store;
 }
 
-/** POST /api/stores — creates the store and its 8 module rows from templates. */
+/** POST /api/stores — creates the store and one row per launch step from the templates. */
 export async function createStore(user: CurrentUser, raw: unknown) {
   if (!can.createStore(user)) throw forbidden();
   const input = CreateStoreInput.parse(raw);
@@ -126,8 +123,8 @@ export async function updateStore(user: CurrentUser, storeId: string, raw: unkno
 
   if (input.actualLaunchDate !== undefined && input.actualLaunchDate !== null && store.actualLaunchDate === null) {
     if (store.overallStatus !== "READY_FOR_LAUNCH") {
-      throw badRequest("The actual launch date can be entered once the store is Ready for Launch (all modules approved).", {
-        actualLaunchDate: "Store is not Ready for Launch yet",
+      throw badRequest("The soft launch date can be entered once every department is green (all steps done).", {
+        actualLaunchDate: "Not every step is done yet",
       });
     }
   }
@@ -139,82 +136,6 @@ export async function updateStore(user: CurrentUser, storeId: string, raw: unkno
     if (d) await logActivity(tx, { userId: user.id, storeId, action: "store.updated", ...d });
     await recalcStoreStatus(tx, storeId, user.id);
     return updated;
-  });
-}
-
-/** POST /api/stores/:id/key-handover — records handover (Day 0) and auto-schedules fit-out. */
-export const KeyHandoverInput = z.object({
-  handoverDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the handover date").transform(parseDateOnly),
-  receivedBy: z.string().trim().min(2, "Who received the keys?").max(120),
-  premisesCondition: z.enum(["Good", "Needs repair"], { error: "Choose the condition of the premises" }),
-  repairNotes: z.string().trim().max(2000).optional().nullable(),
-});
-
-export async function recordKeyHandover(user: CurrentUser, storeId: string, raw: unknown) {
-  const store = await getStoreForUser(user, storeId);
-  if (!can.editModules(user, store)) throw forbidden("Only the store owner can record the key handover.");
-  const input = KeyHandoverInput.parse(raw);
-  if (input.premisesCondition === "Needs repair" && !input.repairNotes?.trim()) {
-    throw badRequest("Describe what needs repair.", { repairNotes: "Describe what needs repair" });
-  }
-
-  const modules = await prisma.storeModule.findMany({ where: { storeId } });
-  const token = modules.find((m) => m.moduleType === TOKEN_ADVANCE);
-  if (token?.status !== "COMPLETED") {
-    throw badRequest("Key handover cannot be entered before Token Advance is Completed.");
-  }
-  const handover = modules.find((m) => m.moduleType === KEY_HANDOVER);
-  if (!handover) throw conflict("Key Handover milestone is missing for this store.");
-
-  const template = await prisma.moduleTemplate.findUnique({ where: { moduleType: KEY_HANDOVER } });
-  const minPhotos = template?.minPhotos ?? 2;
-  const photoCount = await prisma.attachment.count({
-    where: { storeModuleId: handover.id, fileType: { startsWith: "image/" }, ...(template?.photoTag ? { tag: template.photoTag } : {}) },
-  });
-  if (photoCount < minPhotos) {
-    throw badRequest(`Upload at least ${minPhotos} photos at handover (${photoCount} so far).`, { photos: "More photos needed" });
-  }
-
-  const templates = await prisma.moduleTemplate.findMany();
-  const plan = planModulesFromHandover(input.handoverDate, templates);
-  const offset = await getTargetLaunchOffsetDays();
-
-  return prisma.$transaction(async (tx) => {
-    const isCorrection = store.keyHandoverDate !== null;
-    await tx.store.update({
-      where: { id: storeId },
-      data: {
-        keyHandoverDate: input.handoverDate,
-        // Target launch is filled from the handover only when not already set (owner can edit it).
-        ...(store.targetLaunchDate ? {} : { targetLaunchDate: addDays(input.handoverDate, offset) }),
-      },
-    });
-    await tx.storeModule.update({
-      where: { id: handover.id },
-      data: {
-        status: "COMPLETED",
-        actualEnd: input.handoverDate,
-        details: { receivedBy: input.receivedBy, premisesCondition: input.premisesCondition, repairNotes: input.repairNotes ?? null },
-        completedAt: new Date(),
-        updatedById: user.id,
-      },
-    });
-    // Planned dates are (re)calculated for fit-out modules that have not started yet.
-    for (const p of plan) {
-      const m = modules.find((x) => x.moduleType === p.moduleType);
-      if (m && m.status === "NOT_STARTED") {
-        await tx.storeModule.update({ where: { id: m.id }, data: { plannedStart: p.plannedStart, plannedEnd: p.plannedEnd } });
-      }
-    }
-    await logActivity(tx, {
-      userId: user.id,
-      storeId,
-      storeModuleId: handover.id,
-      action: "key_handover.recorded",
-      oldValue: isCorrection ? { keyHandoverDate: store.keyHandoverDate?.toISOString().slice(0, 10) ?? null } : null,
-      newValue: { keyHandoverDate: input.handoverDate.toISOString().slice(0, 10), receivedBy: input.receivedBy, premisesCondition: input.premisesCondition },
-    });
-    await recalcStoreStatus(tx, storeId, user.id);
   });
 }
 
@@ -258,7 +179,7 @@ export async function reassignOwner(user: CurrentUser, storeId: string, raw: unk
   });
 }
 
-/** Recomputes overall status from module states (spec rules); notifies HQ on Ready for Launch. */
+/** Recomputes overall status from step states; notifies HQ and Sales when every department is green. */
 export async function recalcStoreStatus(tx: Tx, storeId: string, userId: string | null, opts: { force?: boolean } = {}) {
   const store = await tx.store.findUniqueOrThrow({ where: { id: storeId } });
   const modules = await tx.storeModule.findMany({ where: { storeId }, select: { moduleType: true, status: true, approvalStatus: true } });
@@ -268,9 +189,10 @@ export async function recalcStoreStatus(tx: Tx, storeId: string, userId: string 
   if (next !== store.overallStatus) {
     await logActivity(tx, { userId, storeId, action: "store.status_auto", oldValue: { overallStatus: store.overallStatus }, newValue: { overallStatus: next } });
     if (next === "READY_FOR_LAUNCH") {
-      await notifyUsers(tx, await hqRecipients(tx, store.state, { includeRegional: false }), {
+      const recipients = [...(await hqRecipients(tx, store.state, { includeRegional: false })), ...(await teamRecipients(tx, store, ["SALES", "STORE_OWNER"]))];
+      await notifyUsers(tx, recipients, {
         type: "ready_for_launch",
-        message: `${store.name} (${store.storeCode}) is Ready for Launch — all modules approved.`,
+        message: `${store.name} (${store.storeCode}): all departments green — ready for soft launch.`,
         storeId,
       });
     }

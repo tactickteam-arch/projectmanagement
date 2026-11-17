@@ -18,9 +18,10 @@ const Tag = z
 /** POST /api/modules/:id/attachments — multipart form: file, tag. */
 export async function uploadAttachment(user: CurrentUser, moduleId: string, form: FormData) {
   const { store, mod } = await getModuleById(user, moduleId);
-  if (!can.uploadFiles(user, store)) throw forbidden("Only the store owner can upload files.");
+  const template = await prisma.moduleTemplate.findUniqueOrThrow({ where: { moduleType: mod.moduleType } });
+  if (!can.editModule(user, store, template)) throw forbidden("Only the team that owns this step can upload files.");
   if (mod.status === "COMPLETED" && mod.approvalStatus === "APPROVED") {
-    throw conflict("This module is approved by HQ; files can no longer be changed.");
+    throw conflict("This step is done and approved; files can no longer be changed.");
   }
   const file = form.get("file");
   if (!(file instanceof File)) throw badRequest("Choose a file to upload.");
@@ -50,15 +51,16 @@ export async function uploadAttachment(user: CurrentUser, moduleId: string, form
   }
 }
 
-/** DELETE /api/attachments/:id — owner removes a file from a module that is not yet approved. */
+/** DELETE /api/attachments/:id — the step's team removes a file from a step that is not yet approved. */
 export async function deleteAttachment(user: CurrentUser, attachmentId: string) {
   const att = await prisma.attachment.findUnique({ where: { id: attachmentId }, include: { storeModule: true } });
   if (!att) throw notFound("File not found");
   const store = await getStoreForUser(user, att.storeModule.storeId);
-  if (!can.uploadFiles(user, store)) throw forbidden();
+  const template = await prisma.moduleTemplate.findUniqueOrThrow({ where: { moduleType: att.storeModule.moduleType } });
+  if (!can.editModule(user, store, template)) throw forbidden();
   const m = att.storeModule;
   if (m.status === "COMPLETED" && m.approvalStatus !== "REJECTED") {
-    throw conflict("Files cannot be removed from a module that is Completed. Change its status first.");
+    throw conflict("Files cannot be removed from a step that is Completed. Reopen it first.");
   }
   await prisma.$transaction(async (tx) => {
     await tx.attachment.delete({ where: { id: att.id } });

@@ -11,14 +11,14 @@ import { delaysReport } from "@/lib/queries";
 export const metadata = { title: "Delays report" };
 
 export default async function DelaysPage() {
-  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER"]);
+  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER", "TEAM_MEMBER"]);
   const rows = await delaysReport(user);
   return (
     <>
       <PageHeader
         crumbs={[{ label: "Dashboard", href: "/hq" }, { label: "Delays report" }]}
         title="Delays report"
-        description="Overdue modules — planned end date has passed and the module is not Completed — sorted by days overdue."
+        description="Overdue launch steps — planned end date has passed and the step is not Completed — sorted by days overdue."
         actions={
           <Button asChild variant="outline" size="sm">
             <a href="/api/reports/delays?format=xlsx">
@@ -28,7 +28,7 @@ export default async function DelaysPage() {
         }
       />
       {rows.length === 0 ? (
-        <EmptyState icon={<CheckCircle2 className="size-8" />} title="No overdue modules" />
+        <EmptyState icon={<CheckCircle2 className="size-8" />} title="No overdue steps" />
       ) : (
         <Card className="overflow-hidden py-0">
           <div className="overflow-x-auto">

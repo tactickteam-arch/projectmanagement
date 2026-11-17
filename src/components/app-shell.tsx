@@ -1,4 +1,5 @@
-import { Bell, ClipboardCheck, Clock, IndianRupee, LayoutDashboard, Map, Plus, Settings, Store } from "lucide-react";
+import { Bell, ClipboardCheck, Clock, IndianRupee, LayoutDashboard, ListTodo, Map, Plus, Settings, Store } from "lucide-react";
+import { teamsLabel } from "@/lib/teams";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ROLE_LABELS } from "@/lib/auth/access";
@@ -16,6 +17,7 @@ function navFor(user: CurrentUser): NavItem[] {
     ];
   }
   const items: NavItem[] = [
+    ...(user.teams.length ? [{ href: "/tasks", label: "My tasks", icon: <ListTodo className="size-4" /> }] : []),
     { href: "/hq", label: "Dashboard", icon: <LayoutDashboard className="size-4" />, exact: true },
     { href: "/hq/approvals", label: "Approvals", icon: <ClipboardCheck className="size-4" /> },
     { href: "/hq/reports/delays", label: "Delays report", icon: <Clock className="size-4" /> },
@@ -60,7 +62,9 @@ function Bellink({ unread }: { unread: number }) {
 /** HQ: dark sidebar (desktop-first). Store owner: compact top bar + bottom tabs (mobile-first). */
 export function AppShell({ user, unread, children }: { user: CurrentUser; unread: number; children: ReactNode }) {
   const nav = navFor(user);
-  const roleLabel = ROLE_LABELS[user.role] + (user.role === "REGIONAL_MANAGER" && user.regionStates.length ? ` · ${user.regionStates.join(", ")}` : "");
+  const roleLabel =
+    (user.role === "TEAM_MEMBER" && user.teams.length ? teamsLabel(user.teams) : ROLE_LABELS[user.role] + (user.teams.length ? ` · ${teamsLabel(user.teams)}` : "")) +
+    ((user.role === "REGIONAL_MANAGER" || user.role === "TEAM_MEMBER") && user.regionStates.length ? ` · ${user.regionStates.join(", ")}` : "");
 
   if (user.role === "STORE_OWNER") {
     return (

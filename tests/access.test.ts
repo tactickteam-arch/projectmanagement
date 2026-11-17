@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { canViewStore, storeScope } from "../src/lib/auth/access";
+import { can } from "../src/lib/auth/permissions";
+import { isTeamKey } from "../src/lib/teams";
 import { MODULE_DEFINITIONS } from "../src/modules";
 
 const kaStore = { ownerId: "owner-1", state: "KA" };
@@ -32,21 +34,76 @@ describe("store access (spec: Users and roles)", () => {
   });
 });
 
-describe("module definitions (spec: 8 modules, photo minimums)", () => {
-  it("has 8 modules with unique types and orders", () => {
-    assert.equal(MODULE_DEFINITIONS.length, 8);
-    assert.equal(new Set(MODULE_DEFINITIONS.map((m) => m.moduleType)).size, 8);
-    assert.equal(new Set(MODULE_DEFINITIONS.map((m) => m.sortOrder)).size, 8);
+describe("Sangeetha team members", () => {
+  it("see all stores without states, or only their states", () => {
+    const all = { id: "t", role: "TEAM_MEMBER" as const, regionStates: [], teams: ["ACCOUNTS"] };
+    assert.deepEqual(storeScope(all), {});
+    assert.equal(canViewStore(all, kaStore), true);
+    const ka = { ...all, regionStates: ["KA"] };
+    assert.equal(canViewStore(ka, kaStore), true);
+    assert.equal(canViewStore(ka, { ownerId: "owner-1", state: "TN" }), false);
+  });
+});
+
+describe("step permissions (who fills in / approves)", () => {
+  const owner = { id: "owner-1", role: "STORE_OWNER" as const, regionStates: [] };
+  const hq = { id: "hq", role: "SUPER_ADMIN" as const, regionStates: [] };
+  const accounts = { id: "a", role: "TEAM_MEMBER" as const, regionStates: [], teams: ["ACCOUNTS"] };
+  const rk = { id: "rk", role: "TEAM_MEMBER" as const, regionStates: [], teams: ["RK"] };
+  const step = (moduleType: string) => {
+    const d = MODULE_DEFINITIONS.find((m) => m.moduleType === moduleType)!;
+    return { editTeams: d.editTeams, approverTeam: d.approverTeam };
+  };
+
+  it("store owner fills in Location filing and Key received for their own store only", () => {
+    assert.equal(can.editModule(owner, kaStore, step("LOCATION_FILING")), true);
+    assert.equal(can.editModule(owner, kaStore, step("KEY_HANDOVER")), true);
+    assert.equal(can.editModule(owner, kaStore, step("LANDLORD_CHECK")), false);
+    assert.equal(can.editModule({ ...owner, id: "owner-2" }, kaStore, step("LOCATION_FILING")), false);
   });
 
-  it("photo minimums: 2 for Key Handover, 4 for In-shop Branding, 1 otherwise", () => {
+  it("Accounts manages the landlord check and token advance; RK approves the landlord check and handover", () => {
+    assert.equal(can.editModule(accounts, kaStore, step("LANDLORD_CHECK")), true);
+    assert.equal(can.editModule(accounts, kaStore, step("MARKETING")), false);
+    assert.equal(can.approveModule(accounts, kaStore, step("TOKEN_ADVANCE")), true);
+    assert.equal(can.approveModule(accounts, kaStore, step("LANDLORD_CHECK")), false);
+    assert.equal(can.approveModule(rk, kaStore, step("LANDLORD_CHECK")), true);
+    assert.equal(can.approveModule(rk, kaStore, step("KEY_HANDOVER")), true);
+    assert.equal(can.approveModule(owner, kaStore, step("LOCATION_FILING")), false);
+  });
+
+  it("steps without an approver cannot be approved by a team; HQ can do everything", () => {
+    assert.equal(can.approveModule(accounts, kaStore, step("MARKETING")), false);
+    assert.equal(can.editModule(hq, kaStore, step("MARKETING")), true);
+    assert.equal(can.approveModule(hq, kaStore, step("LOCATION_FILING")), true);
+  });
+});
+
+describe("launch-flow step definitions", () => {
+  it("has 13 steps (5 + 8 department tracks) with unique types and orders", () => {
+    assert.equal(MODULE_DEFINITIONS.length, 13);
+    assert.equal(new Set(MODULE_DEFINITIONS.map((m) => m.moduleType)).size, 13);
+    assert.equal(new Set(MODULE_DEFINITIONS.map((m) => m.sortOrder)).size, 13);
+    assert.equal(MODULE_DEFINITIONS.filter((m) => m.step === 6).length, 8);
+  });
+
+  it("approvers follow the flow: Boss + CEO, RK, Accounts, none for Legal, RK; departments mark green", () => {
+    const approvers = Object.fromEntries(MODULE_DEFINITIONS.map((m) => [m.moduleType, m.approverTeam]));
+    assert.equal(approvers.LOCATION_FILING, "LEADERSHIP");
+    assert.equal(approvers.LANDLORD_CHECK, "RK");
+    assert.equal(approvers.TOKEN_ADVANCE, "ACCOUNTS");
+    assert.equal(approvers.LEGAL_STATUTORY, null);
+    assert.equal(approvers.KEY_HANDOVER, "RK");
+    for (const m of MODULE_DEFINITIONS.filter((x) => x.step === 6)) assert.equal(m.approverTeam, null, m.moduleType);
+  });
+
+  it("every team used by a step exists", () => {
     for (const m of MODULE_DEFINITIONS) {
-      const expected = m.moduleType === "KEY_HANDOVER" ? 2 : m.moduleType === "INSHOP_BRANDING" ? 4 : 1;
-      assert.equal(m.minPhotos, expected, m.moduleType);
+      for (const t of [...m.editTeams, ...(m.approverTeam ? [m.approverTeam] : [])]) assert.ok(t === "STORE_OWNER" || isTeamKey(t), `${m.moduleType}: ${t}`);
     }
   });
 
-  it("field keys are unique within each module", () => {
+  it("field keys are unique within each step", () => {
     for (const m of MODULE_DEFINITIONS) {
       const keys = m.fields.map((f) => f.key);
       assert.equal(new Set(keys).size, keys.length, m.moduleType);

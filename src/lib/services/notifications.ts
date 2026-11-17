@@ -2,10 +2,10 @@ import "server-only";
 import type { CurrentUser } from "@/lib/auth/dal";
 import { formatDateOnly, todayInIndia } from "@/lib/dates";
 import { prisma } from "@/lib/db";
-import { notifyUsers } from "@/lib/notify";
+import { notifyUsers, teamRecipients } from "@/lib/notify";
 import { getSetting, setSetting, SETTING_KEYS } from "@/lib/settings";
 import { daysOverdue } from "@/lib/status";
-import { SETUP_MODULE_TYPES } from "@/modules";
+import { MODULE_TYPES } from "@/modules";
 
 export async function listNotifications(user: CurrentUser, limit = 50) {
   return prisma.notification.findMany({
@@ -28,9 +28,10 @@ export async function markRead(user: CurrentUser, ids: string[] | "all") {
 }
 
 /**
- * Spec "Module overdue (daily check) → Store owner and HQ". There is no scheduler in the
+ * Spec "Module overdue (daily check) → Store owner and HQ" — now the team that owns the step
+ * (which includes the store owner for owner steps) and HQ. There is no scheduler in the
  * local demo, so the check runs at most once per IST day, the first time any signed-in page
- * loads. Owners get one notification per overdue module; HQ gets one daily summary.
+ * loads. Teams get one notification per overdue step; HQ gets one daily summary.
  */
 export async function ensureDailyOverdueCheck(): Promise<void> {
   const today = todayInIndia();
@@ -40,21 +41,23 @@ export async function ensureDailyOverdueCheck(): Promise<void> {
 
   const modules = await prisma.storeModule.findMany({
     where: {
-      moduleType: { in: [...SETUP_MODULE_TYPES] },
+      moduleType: { in: [...MODULE_TYPES] },
       status: { not: "COMPLETED" },
       plannedEnd: { lt: today },
       store: { overallStatus: { notIn: ["LAUNCHED", "DROPPED", "ON_HOLD"] } },
     },
-    select: { id: true, moduleType: true, status: true, plannedEnd: true, store: { select: { id: true, name: true, ownerId: true } } },
+    select: { id: true, moduleType: true, status: true, plannedEnd: true, store: { select: { id: true, name: true, ownerId: true, state: true } } },
   });
   if (modules.length === 0) return;
-  const names = Object.fromEntries((await prisma.moduleTemplate.findMany({ select: { moduleType: true, displayName: true } })).map((t) => [t.moduleType, t.displayName]));
+  const templates = await prisma.moduleTemplate.findMany({ select: { moduleType: true, displayName: true, editTeams: true } });
+  const names = Object.fromEntries(templates.map((t) => [t.moduleType, t.displayName]));
   const hq = (await prisma.user.findMany({ where: { role: "SUPER_ADMIN", isActive: true }, select: { id: true } })).map((u) => u.id);
 
   await prisma.$transaction(async (tx) => {
     for (const m of modules) {
       const days = daysOverdue(m.plannedEnd, m.status, today);
-      await notifyUsers(tx, [m.store.ownerId], {
+      const teams = templates.find((t) => t.moduleType === m.moduleType)?.editTeams ?? ["STORE_OWNER"];
+      await notifyUsers(tx, await teamRecipients(tx, m.store, teams), {
         type: "module_overdue",
         message: `${m.store.name}: ${names[m.moduleType] ?? m.moduleType} is ${days} day${days === 1 ? "" : "s"} overdue.`,
         storeId: m.store.id,

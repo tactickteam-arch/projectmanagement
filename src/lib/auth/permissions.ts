@@ -1,28 +1,44 @@
+import { STORE_OWNER_TEAM } from "@/lib/teams";
 import { canViewStore, type AccessSubject } from "./access";
 
 /**
- * What each role may do (spec "Users and roles"). Checked on the server for every
- * mutation; the UI uses the same functions only to decide which buttons to show.
+ * What each role may do. Checked on the server for every mutation; the UI uses the same
+ * functions only to decide which buttons to show.
  *
- * Demo decisions (OPEN_QUESTIONS.md):
- *  - Module approval: SuperAdmin only. Regional Managers view and comment until
- *    Sangeetha confirms whether they approve (spec open question).
- *  - Module forms are filled by the store's owner; HQ reviews, approves or rejects.
+ * Steps follow the launch flow: each step has teams that fill it in (`editTeams`, where
+ * "STORE_OWNER" means the store's owner) and optionally a team that approves it
+ * (`approverTeam`, e.g. Boss + CEO, RK, Accounts). SuperAdmin (HQ) can do both on every step.
  */
 type StoreRef = { ownerId: string; state: string };
+type StepRef = { editTeams: readonly string[]; approverTeam: string | null };
+
+const inTeams = (u: AccessSubject, teams: readonly string[]) => (u.teams ?? []).some((t) => teams.includes(t));
 
 export const can = {
   viewStore: (u: AccessSubject, s: StoreRef) => canViewStore(u, s),
   createStore: (u: AccessSubject) => u.role === "SUPER_ADMIN" || u.role === "STORE_OWNER",
   editStoreMaster: (u: AccessSubject, s: StoreRef) =>
     u.role === "SUPER_ADMIN" || (u.role === "STORE_OWNER" && s.ownerId === u.id),
-  editModules: (u: AccessSubject, s: StoreRef) => u.role === "STORE_OWNER" && s.ownerId === u.id,
-  uploadFiles: (u: AccessSubject, s: StoreRef) => u.role === "STORE_OWNER" && s.ownerId === u.id,
-  approveModules: (u: AccessSubject, s: StoreRef) => u.role === "SUPER_ADMIN" && canViewStore(u, s),
+  /** Fill in a step: SuperAdmin; the store owner on owner steps; members of the step's teams. */
+  editModule: (u: AccessSubject, s: StoreRef, step: StepRef) => {
+    if (u.role === "SUPER_ADMIN") return true;
+    if (u.role === "STORE_OWNER") return s.ownerId === u.id && step.editTeams.includes(STORE_OWNER_TEAM);
+    return canViewStore(u, s) && inTeams(u, step.editTeams);
+  },
+  /** Approve or reject a step: SuperAdmin, or a member of the step's approver team. */
+  approveModule: (u: AccessSubject, s: StoreRef, step: StepRef) => {
+    if (u.role === "SUPER_ADMIN") return true;
+    if (u.role === "STORE_OWNER" || !step.approverTeam) return false;
+    return canViewStore(u, s) && inTeams(u, [step.approverTeam]);
+  },
+  /** Record a value after approval (e.g. the APX PO number). */
+  recordAfterApproval: (u: AccessSubject, s: StoreRef, teams: readonly string[]) =>
+    u.role === "SUPER_ADMIN" || (u.role !== "STORE_OWNER" && canViewStore(u, s) && inTeams(u, teams)),
   comment: (u: AccessSubject, s: StoreRef) => canViewStore(u, s),
   overrideStatus: (u: AccessSubject) => u.role === "SUPER_ADMIN",
   assignStores: (u: AccessSubject) => u.role === "SUPER_ADMIN",
   manageUsers: (u: AccessSubject) => u.role === "SUPER_ADMIN",
   manageTemplates: (u: AccessSubject) => u.role === "SUPER_ADMIN",
-  viewReports: (u: AccessSubject) => u.role === "SUPER_ADMIN" || u.role === "REGIONAL_MANAGER",
+  viewDashboard: (u: AccessSubject) => u.role !== "STORE_OWNER",
+  viewReports: (u: AccessSubject) => u.role !== "STORE_OWNER",
 };

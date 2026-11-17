@@ -7,7 +7,7 @@ import { costReport } from "@/lib/queries";
 /** GET /api/reports/costs — estimated vs actual per store and per module; ?format=xlsx. */
 export async function GET(request: Request) {
   return handle(async () => {
-    const user = await requireApiUser(["SUPER_ADMIN", "REGIONAL_MANAGER"]);
+    const user = await requireApiUser(["SUPER_ADMIN", "REGIONAL_MANAGER", "TEAM_MEMBER"]);
     const report = await costReport(user);
     if (new URL(request.url).searchParams.get("format") === "xlsx") {
       const types = report.modules.map((m) => m.moduleType);
@@ -37,9 +37,9 @@ export async function GET(request: Request) {
           })),
         },
         {
-          name: "By module",
+          name: "By step",
           columns: [
-            { header: "Module", key: "name", width: 34 },
+            { header: "Step", key: "name", width: 34 },
             { header: "Estimated", key: "est", numFmt: INR_FORMAT },
             { header: "Actual", key: "actual", numFmt: INR_FORMAT },
             { header: "Variance (actual − est.)", key: "var", numFmt: INR_FORMAT, width: 22 },

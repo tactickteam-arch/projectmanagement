@@ -20,18 +20,18 @@ function Variance({ est, actual }: { est: number; actual: number }) {
 }
 
 export default async function CostsPage() {
-  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER"]);
+  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER", "TEAM_MEMBER"]);
   const r = await costReport(user);
   const est = r.stores.reduce((t, s) => t + s.est, 0);
   const actual = r.stores.reduce((t, s) => t + s.actual, 0);
-  const modules = r.modules.filter((m) => m.moduleType !== "KEY_HANDOVER");
+  const modules = r.modules;
 
   return (
     <>
       <PageHeader
         crumbs={[{ label: "Dashboard", href: "/hq" }, { label: "Cost report" }]}
         title="Cost report"
-        description="Estimated vs actual cost per store and per module, from the cost fields on each module."
+        description="Estimated vs actual cost per store and per launch step, from the cost fields on each step."
         actions={
           <Button asChild variant="outline" size="sm">
             <a href="/api/reports/costs?format=xlsx">
@@ -43,11 +43,11 @@ export default async function CostsPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard label="Estimated (all stores)" value={formatINR(est)} />
         <StatCard label="Actual (all stores)" value={formatINR(actual)} />
-        <StatCard label="Variance" value={<Variance est={est} actual={actual} />} hint="Actual minus estimated; modules without both values count as 0" />
+        <StatCard label="Variance" value={<Variance est={est} actual={actual} />} hint="Actual minus estimated; steps without both values count as 0" />
       </div>
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="text-base">By module</CardTitle>
+          <CardTitle className="text-base">By step</CardTitle>
         </CardHeader>
         <CardContent>
           <CostChart data={modules.map((m) => ({ label: MODULE_SHORT_LABELS[m.moduleType] ?? m.displayName, est: m.est, actual: m.actual }))} />

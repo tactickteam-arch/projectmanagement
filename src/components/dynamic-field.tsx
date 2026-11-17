@@ -132,6 +132,17 @@ export function DynamicField({
           {err}
         </div>
       );
+    case "task":
+      return (
+        <label htmlFor={id} className={`flex min-h-10 cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-accent/60 ${disabled ? "cursor-default opacity-80" : ""}`}>
+          <Checkbox id={id} checked={value === true} onCheckedChange={(c) => onChange(c === true)} disabled={disabled} className="size-5" />
+          <span className={`flex-1 text-sm ${value === true ? "text-muted-foreground line-through decoration-muted-foreground/40" : ""}`}>
+            {field.label}
+            {field.owner && <span className="ml-2 text-xs text-muted-foreground no-underline">{field.owner}</span>}
+          </span>
+          {error && <span className="text-xs text-destructive">{error}</span>}
+        </label>
+      );
     case "multiselect":
       return <MultiSelect field={field} value={(value as string[]) ?? []} onChange={onChange} disabled={disabled} error={error} />;
     case "checklist":
@@ -190,40 +201,71 @@ function MultiSelect({ field, value, onChange, disabled, error }: { field: Field
   );
 }
 
+/** Empty row for a checklist: first column holds the item name, yes/no columns start unticked. */
+export function checklistRow(field: FieldDef, name = ""): Record<string, unknown> {
+  const cols = field.itemFields ?? [];
+  return Object.fromEntries(cols.map((c, i) => [c.key, i === 0 ? name : c.type === "yesno" ? false : null]));
+}
+
 function Checklist({ field, value, onChange, disabled, error }: { field: FieldDef; value: Record<string, unknown>[] | null; onChange: (v: Value) => void; disabled?: boolean; error?: string }) {
-  const rows = value ?? (field.defaultItems ?? []).map((n) => ({ itemName: n, quantity: null, received: false, installed: false }));
+  const cols = field.itemFields ?? [];
+  const [nameCol, ...rest] = cols;
+  const rows = value ?? (field.defaultItems ?? []).map((n) => checklistRow(field, n));
   const update = (i: number, patch: Record<string, unknown>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const ticked = field.mustTick ? rows.filter((r) => r[field.mustTick as string] === true).length : null;
   return (
     <div className="space-y-2 sm:col-span-2">
-      <span className="text-sm font-medium">{field.label}</span>
+      <span className="flex items-baseline justify-between gap-2 text-sm font-medium">
+        {field.label}
+        {ticked !== null && (
+          <span className={`text-xs font-normal ${ticked === rows.length && rows.length > 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
+            {ticked} of {rows.length} {cols.find((c) => c.key === field.mustTick)?.label.toLowerCase() ?? "done"}
+          </span>
+        )}
+      </span>
       <div className="divide-y rounded-md border">
         {rows.map((r, i) => (
           <div key={i} className="flex flex-wrap items-center gap-3 p-2.5">
-            <Input
-              value={(r.itemName as string) ?? ""}
-              onChange={(e) => update(i, { itemName: e.target.value })}
-              disabled={disabled}
-              className="h-9 min-w-40 flex-1"
-              aria-label="Item name"
-            />
-            <Input
-              type="number"
-              min={0}
-              value={r.quantity === null || r.quantity === undefined ? "" : String(r.quantity)}
-              onChange={(e) => update(i, { quantity: e.target.value === "" ? null : Number(e.target.value) })}
-              disabled={disabled}
-              className="h-9 w-20"
-              placeholder="Qty"
-              aria-label="Quantity"
-            />
-            <label className="flex items-center gap-1.5 text-sm">
-              <Checkbox checked={r.received === true} onCheckedChange={(c) => update(i, { received: c === true })} disabled={disabled} /> Received
-            </label>
-            <label className="flex items-center gap-1.5 text-sm">
-              <Checkbox checked={r.installed === true} onCheckedChange={(c) => update(i, { installed: c === true })} disabled={disabled} /> Installed
-            </label>
+            {nameCol && (
+              <Input
+                value={(r[nameCol.key] as string) ?? ""}
+                onChange={(e) => update(i, { [nameCol.key]: e.target.value })}
+                disabled={disabled}
+                className="h-9 min-w-48 flex-1"
+                aria-label={nameCol.label}
+              />
+            )}
+            {rest.map((c) =>
+              c.type === "yesno" ? (
+                <label key={c.key} className="flex items-center gap-1.5 text-sm">
+                  <Checkbox checked={r[c.key] === true} onCheckedChange={(v) => update(i, { [c.key]: v === true })} disabled={disabled} /> {c.label}
+                </label>
+              ) : c.type === "number" ? (
+                <Input
+                  key={c.key}
+                  type="number"
+                  min={c.min}
+                  value={r[c.key] === null || r[c.key] === undefined ? "" : String(r[c.key])}
+                  onChange={(e) => update(i, { [c.key]: e.target.value === "" ? null : Number(e.target.value) })}
+                  disabled={disabled}
+                  className="h-9 w-20"
+                  placeholder={c.label}
+                  aria-label={c.label}
+                />
+              ) : (
+                <Input
+                  key={c.key}
+                  value={(r[c.key] as string) ?? ""}
+                  onChange={(e) => update(i, { [c.key]: e.target.value || null })}
+                  disabled={disabled}
+                  className="h-9 w-full sm:w-48"
+                  placeholder={c.label}
+                  aria-label={c.label}
+                />
+              ),
+            )}
             {!disabled && (
-              <Button type="button" variant="ghost" size="icon-sm" onClick={() => onChange(rows.filter((_, j) => j !== i))} aria-label={`Remove ${String(r.itemName ?? "item")}`}>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => onChange(rows.filter((_, j) => j !== i))} aria-label={`Remove ${String(r[nameCol?.key ?? ""] ?? "item")}`}>
                 <Trash2 className="size-4" />
               </Button>
             )}
@@ -231,13 +273,11 @@ function Checklist({ field, value, onChange, disabled, error }: { field: FieldDe
         ))}
       </div>
       {!disabled && (
-        <Button type="button" variant="outline" size="sm" onClick={() => onChange([...rows, { itemName: "", quantity: null, received: false, installed: false }])}>
+        <Button type="button" variant="outline" size="sm" onClick={() => onChange([...rows, checklistRow(field)])}>
           <Plus className="size-4" /> Add item
         </Button>
       )}
-      <p className="text-xs text-muted-foreground">Item photos: upload them under “Branding item photos” below.</p>
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
-

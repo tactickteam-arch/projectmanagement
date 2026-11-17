@@ -52,7 +52,9 @@ export default async function OwnerHome() {
                 </div>
                 <div className="mt-4">
                   <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
-                    <span>{s.approvedCount} of 7 modules approved</span>
+                    <span>
+                      {s.approvedCount} of {s.totalSteps} launch steps done
+                    </span>
                     <span className="font-medium tabular-nums text-foreground">{s.progressPercent}%</span>
                   </div>
                   <ProgressBar value={s.progressPercent} label={`${s.name} progress`} className="h-2" />
@@ -60,7 +62,7 @@ export default async function OwnerHome() {
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <KeyRound className="size-3.5" aria-hidden />
-                    {s.daysSinceHandover !== null ? `${s.daysSinceHandover} day${s.daysSinceHandover === 1 ? "" : "s"} since key handover` : s.actualLaunchDate ? `Launched ${formatDate(s.actualLaunchDate)}` : "Keys not received yet"}
+                    {s.daysSinceHandover !== null ? `${s.daysSinceHandover} day${s.daysSinceHandover === 1 ? "" : "s"} since keys received` : s.actualLaunchDate ? `Soft launched ${formatDate(s.actualLaunchDate)}` : "Keys not received yet"}
                   </span>
                   {s.overdueCount > 0 && (
                     <span className="flex items-center gap-1 font-medium text-red-600">

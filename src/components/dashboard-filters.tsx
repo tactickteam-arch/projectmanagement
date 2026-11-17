@@ -47,7 +47,7 @@ export function DashboardFilters({ owners, cities }: { owners: { id: string; nam
         allLabel="All statuses"
         value={params.get("status")}
         onChange={(v) => set("status", v)}
-        options={[{ value: "NONE", label: "Not yet finalised" }, ...OVERALL_STATUS_ORDER.map((s) => ({ value: s, label: OVERALL_STATUS_LABELS[s] }))]}
+        options={[{ value: "NONE", label: "Location filing" }, ...OVERALL_STATUS_ORDER.map((s) => ({ value: s, label: OVERALL_STATUS_LABELS[s] }))]}
       />
       <FilterSelect label="Store owner" value={params.get("ownerId")} onChange={(v) => set("ownerId", v)} options={owners.map((o) => ({ value: o.id, label: o.name }))} />
       <FilterSelect label="Launch month" allLabel="Any launch month" value={params.get("launchMonth")} onChange={(v) => set("launchMonth", v)} options={launchMonths()} />

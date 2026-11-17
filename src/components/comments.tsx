@@ -17,7 +17,7 @@ export interface CommentItem {
   user: { id: string; name: string; role: string };
 }
 
-/** Spec: comment thread per module between the store owner and HQ. */
+/** Spec: comment thread per step between the teams, the store owner and HQ. */
 export function Comments({ moduleId, comments, currentUserId, canComment }: { moduleId: string; comments: CommentItem[]; currentUserId: string; canComment: boolean }) {
   const router = useRouter();
   const [text, setText] = useState("");

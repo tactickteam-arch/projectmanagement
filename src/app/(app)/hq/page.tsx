@@ -18,7 +18,7 @@ export const metadata = { title: "Dashboard" };
 const SORTS = ["code", "name", "progress", "launch", "overdue"] as const;
 
 export default async function HqDashboard({ searchParams }: PageProps<"/hq">) {
-  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER"]);
+  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER", "TEAM_MEMBER"]);
   const sp = await searchParams;
   const str = (k: string) => (typeof sp[k] === "string" && sp[k] ? (sp[k] as string) : undefined);
   const status = str("status");
@@ -46,14 +46,16 @@ export default async function HqDashboard({ searchParams }: PageProps<"/hq">) {
 
   const chartData = [
     ...OVERALL_STATUS_ORDER.map((s) => ({ label: OVERALL_STATUS_LABELS[s], count: summary.byStatus.find((b) => b.status === s)?.count ?? 0 })),
-    { label: "Not yet finalised", count: summary.byStatus.find((b) => b.status === "NONE")?.count ?? 0 },
+    { label: "Location filing", count: summary.byStatus.find((b) => b.status === "NONE")?.count ?? 0 },
   ].filter((d) => d.count > 0);
 
   return (
     <>
       <PageHeader
         title="Store launch dashboard"
-        description={user.role === "REGIONAL_MANAGER" ? `Stores in your region (${user.regionStates.join(", ")}).` : "All new stores across India."}
+        description={
+          user.role === "SUPER_ADMIN" || !user.regionStates.length ? "All new outlets across India, step by step through the launch flow." : `Stores in your region (${user.regionStates.join(", ")}).`
+        }
         actions={
           <Button asChild variant="outline" size="sm">
             <a href={`/api/stores?${exportQs.toString()}`}>
@@ -69,7 +71,7 @@ export default async function HqDashboard({ searchParams }: PageProps<"/hq">) {
         <StatCard
           label="Delayed stores"
           value={summary.delayedStores}
-          hint="With an overdue module"
+          hint="With an overdue step"
           icon={<AlertTriangle className="size-4" />}
           tone={summary.delayedStores ? "danger" : "default"}
           href="/hq/reports/delays"
@@ -77,7 +79,7 @@ export default async function HqDashboard({ searchParams }: PageProps<"/hq">) {
         <StatCard
           label="Blocked stores"
           value={summary.blockedStores}
-          hint="With a blocked module"
+          hint="With a blocked step"
           icon={<Ban className="size-4" />}
           tone={summary.blockedStores ? "warning" : "default"}
           href="/hq?sort=overdue"
@@ -89,14 +91,14 @@ export default async function HqDashboard({ searchParams }: PageProps<"/hq">) {
           icon={<IndianRupee className="size-4" />}
           href="/hq/reports/costs"
         />
-        <StatCard label="Awaiting approval" value={summary.pendingApprovals} hint="Modules marked Completed" icon={<ClipboardCheck className="size-4" />} href="/hq/approvals" />
+        <StatCard label="Awaiting approval" value={summary.pendingApprovals} hint="Steps sent to Boss + CEO, RK or Accounts" icon={<ClipboardCheck className="size-4" />} href="/hq/approvals" />
       </div>
 
       <div className="mt-6 space-y-6">
         <section aria-labelledby="grid-title" className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <h2 id="grid-title" className="font-semibold">
-              Store × module status <span className="text-sm font-normal text-muted-foreground">({stores.length} of {allStores.length})</span>
+              Store × step status <span className="text-sm font-normal text-muted-foreground">({stores.length} of {allStores.length})</span>
             </h2>
             <GridLegend />
           </div>

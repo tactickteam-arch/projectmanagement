@@ -2,32 +2,33 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addDays, daysBetween, formatDateOnly, parseDateOnly, todayInIndia } from "../src/lib/dates";
 import { defaultTargetLaunch, planModulesFromHandover } from "../src/lib/scheduling";
-import { MODULE_DEFINITIONS } from "../src/modules";
+import { MODULE_DEFINITIONS, SETUP_TRACK_TYPES } from "../src/modules";
 
-describe("planModulesFromHandover (spec: auto-scheduling on key handover)", () => {
+describe("planModulesFromHandover (department tracks scheduled from Day 0)", () => {
   const handover = parseDateOnly("2026-12-01");
   const plan = planModulesFromHandover(handover, MODULE_DEFINITIONS);
   const byType = Object.fromEntries(plan.map((p) => [p.moduleType, p]));
 
-  it("schedules exactly the five fit-out modules", () => {
-    assert.deepEqual(
-      plan.map((p) => p.moduleType).sort(),
-      ["AIR_CONDITIONING", "ELECTRICAL_IT_WIRING", "EXTERNAL_SIGNAGE", "INSHOP_BRANDING", "IT_WORKS"],
-    );
+  it("schedules exactly the eight step-6 department tracks", () => {
+    assert.deepEqual(plan.map((p) => p.moduleType).sort(), [...SETUP_TRACK_TYPES].sort());
+    assert.equal(plan.length, 8);
   });
 
-  it("uses the spec placeholder offsets and durations", () => {
+  it("uses each track's default offset and duration (planned end = start + duration)", () => {
     const expect = {
-      ELECTRICAL_IT_WIRING: ["2026-12-01", "2026-12-11"],
-      EXTERNAL_SIGNAGE: ["2026-12-04", "2026-12-11"],
-      AIR_CONDITIONING: ["2026-12-08", "2026-12-13"],
-      IT_WORKS: ["2026-12-11", "2026-12-18"],
-      INSHOP_BRANDING: ["2026-12-16", "2026-12-23"],
+      MARKETING: ["2026-12-01", "2026-12-26"],
+      INTERIORS: ["2026-12-01", "2026-12-22"],
+      BRAND_PROMOTERS: ["2026-12-15", "2026-12-29"],
+      STOCKS: ["2026-12-22", "2026-12-29"],
     };
     for (const [type, [start, end]] of Object.entries(expect)) {
       assert.equal(formatDateOnly(byType[type].plannedStart), start, `${type} start`);
       assert.equal(formatDateOnly(byType[type].plannedEnd), end, `${type} end`);
     }
+  });
+
+  it("every track ends before the default target launch (Day 30)", () => {
+    for (const p of plan) assert.ok(p.plannedEnd < defaultTargetLaunch(handover), p.moduleType);
   });
 
   it("target launch defaults to handover + 30 days", () => {

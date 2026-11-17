@@ -13,7 +13,7 @@ export default async function NewStorePage() {
       <PageHeader
         crumbs={[user.role === "STORE_OWNER" ? { label: "My stores", href: "/owner" } : { label: "Dashboard", href: "/hq" }, { label: "Add store" }]}
         title="Add store"
-        description="Creates the store record with its 7 setup modules and the Key Handover milestone."
+        description="Creates the store with all 13 launch steps. Step 1, Location filing, starts right away."
       />
       <CreateStoreForm owners={owners} />
     </>

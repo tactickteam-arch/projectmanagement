@@ -1,5 +1,6 @@
 // Sangeetha Mobiles – Store Launch Tracker
-// Tables follow "Database tables" in the project spec (11 Nov 2026).
+// Tables follow "Database tables" in the project spec (11 Nov 2026); steps follow the
+// "New outlet launch: user flow" (17 Nov 2026).
 // Module-specific fields live in StoreModule.details (JSONB), validated against
 // ModuleTemplate.fieldSchema, so new modules/fields need no schema change.
 
@@ -16,6 +17,8 @@ enum Role {
   SUPER_ADMIN
   REGIONAL_MANAGER
   STORE_OWNER
+  /// Sangeetha department staff (Accounts, Legal, Marketing, …): see users.teams
+  TEAM_MEMBER
 }
 
 enum StoreType {
@@ -31,6 +34,7 @@ enum Floor {
 
 enum OverallStatus {
   LOCATION_FINALISED
+  PREMISES_CLEARED
   TOKEN_PAID
   KEYS_RECEIVED
   FITOUT_IN_PROGRESS
@@ -60,8 +64,10 @@ model User {
   email        String   @unique
   passwordHash String   @map("password_hash")
   role         Role
-  /// Regional Manager scope: state codes (e.g. "KA", "TN"). Empty for other roles.
+  /// Regional Manager / Team member scope: state codes (e.g. "KA", "TN"). Team member with none = all states.
   regionStates String[] @default([]) @map("region_states")
+  /// Teams from src/lib/teams.ts (e.g. "ACCOUNTS", "RK"). Decide which steps a user fills in or approves.
+  teams        String[] @default([])
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -123,8 +129,10 @@ model ModuleTemplate {
   defaultDurationDays    Int?    @map("default_duration_days")
   fieldSchema            Json    @map("field_schema")
   minPhotos              Int     @default(1) @map("min_photos")
-  /// Key Handover is a milestone, not a module: excluded from progress and approvals.
-  isMilestone            Boolean @default(false) @map("is_milestone")
+  /// Teams that fill in this step ("STORE_OWNER" = the store's owner). SuperAdmin can always edit.
+  editTeams              String[] @default([]) @map("edit_teams")
+  /// Team that approves the step; null = the owning team marks it done itself.
+  approverTeam           String?  @map("approver_team")
   /// Attachment tag that counts toward minPhotos; null = any photo on the module.
   photoTag               String? @map("photo_tag")
 

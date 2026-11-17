@@ -24,16 +24,16 @@ const FIELD_LABELS: Record<string, string> = {
   estCost: "estimated cost",
   actualCost: "actual cost",
   remarks: "remarks",
-  details: "module details",
+  details: "step details",
   targetLaunchDate: "target launch",
-  actualLaunchDate: "actual launch",
-  keyHandoverDate: "key handover date",
+  actualLaunchDate: "soft launch date",
+  keyHandoverDate: "keys received (Day 0)",
   overallStatus: "overall status",
 };
 
 function fmt(key: string, v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
-  if (key === "overallStatus") return OVERALL_STATUS_LABELS[v as keyof typeof OVERALL_STATUS_LABELS] ?? "Not yet finalised";
+  if (key === "overallStatus") return OVERALL_STATUS_LABELS[v as keyof typeof OVERALL_STATUS_LABELS] ?? "Location filing";
   if (key === "status") return MODULE_STATUS_LABELS[v as keyof typeof MODULE_STATUS_LABELS] ?? String(v);
   if (typeof v === "object") return "updated";
   return String(v).slice(0, 80);
@@ -46,7 +46,7 @@ function describe(e: Entry, moduleNames: Record<string, string>): string {
   const ov = (e.oldValue ?? {}) as Record<string, unknown>;
   if (e.action === "module.updated" || e.action === "store.updated") {
     const parts = Object.keys(nv).map((k) =>
-      k === "details" ? "module details" : `${FIELD_LABELS[k] ?? k}: ${fmt(k, ov[k])} → ${fmt(k, nv[k])}`,
+      k === "details" ? "step details" : `${FIELD_LABELS[k] ?? k}: ${fmt(k, ov[k])} → ${fmt(k, nv[k])}`,
     );
     return `${base}${mod ? ` · ${mod}` : ""} — ${parts.join("; ")}`;
   }
@@ -54,7 +54,11 @@ function describe(e: Entry, moduleNames: Record<string, string>): string {
     return `${base}: ${fmt("overallStatus", ov.overallStatus)} → ${fmt("overallStatus", nv.overallStatus)}`;
   }
   if (e.action === "module.rejected" || e.action === "module.approved") {
-    return `${base}${mod ? ` · ${mod}` : ""}${nv.comment ? ` — “${String(nv.comment)}”` : ""}`;
+    return `${base}${mod ? ` · ${mod}` : ""}${nv.as ? ` as ${String(nv.as)}` : ""}${nv.comment ? ` — “${String(nv.comment)}”` : ""}`;
+  }
+  if (e.action === "module.after_approval" || e.action === "key_handover.accepted") {
+    const parts = Object.entries(nv).map(([k, v]) => `${FIELD_LABELS[k] ?? (k === "apxPoNumber" ? "APX PO" : k)}: ${fmt(k, v)}`);
+    return `${base}${mod ? ` · ${mod}` : ""}${parts.length ? ` — ${parts.join("; ")}` : ""}`;
   }
   if (e.action === "attachment.added" || e.action === "attachment.removed") {
     const v = e.action === "attachment.added" ? nv : ov;

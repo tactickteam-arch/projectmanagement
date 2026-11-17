@@ -2,11 +2,11 @@ import { daysBetween, parseDateOnly } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
 import type { ModuleView } from "@/lib/queries";
 
-/** Planned vs actual dates for the fit-out modules (spec: HQ store detail timeline). */
+/** Planned vs actual dates for the step-6 department tracks (spec: HQ store detail timeline). */
 export function Timeline({ modules, handover, targetLaunch, today }: { modules: ModuleView[]; handover: string | null; targetLaunch: string | null; today: string }) {
   const rows = modules.filter((m) => m.plannedStart || m.actualStart);
   if (!handover || rows.length === 0) {
-    return <p className="text-sm text-muted-foreground">The timeline appears once the key handover date is recorded — fit-out modules are scheduled from it.</p>;
+    return <p className="text-sm text-muted-foreground">The timeline appears once RK accepts the key handover — the department tracks are scheduled from that date.</p>;
   }
   const dates = [handover, targetLaunch, today, ...rows.flatMap((m) => [m.plannedStart, m.plannedEnd, m.actualStart, m.actualEnd])].filter(Boolean) as string[];
   const min = dates.reduce((a, b) => (a < b ? a : b));

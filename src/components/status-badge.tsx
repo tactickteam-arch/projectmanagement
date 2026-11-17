@@ -1,10 +1,11 @@
 import { Ban, Check, CircleDashed, Clock, Loader, X } from "lucide-react";
 import type { ApprovalStatus, ModuleStatus, OverallStatus } from "@/generated/prisma/enums";
-import { APPROVAL_STATUS_LABELS, MODULE_STATUS_LABELS, OVERALL_STATUS_LABELS } from "@/lib/status";
+import { APPROVAL_STATUS_LABELS, MODULE_STATUS_LABELS, NO_STATUS_LABEL, OVERALL_STATUS_LABELS } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
 const OVERALL: Record<OverallStatus, string> = {
   LOCATION_FINALISED: "bg-slate-100 text-slate-700 ring-slate-200",
+  PREMISES_CLEARED: "bg-violet-50 text-violet-800 ring-violet-200",
   TOKEN_PAID: "bg-indigo-50 text-indigo-800 ring-indigo-200",
   KEYS_RECEIVED: "bg-sky-50 text-sky-800 ring-sky-200",
   FITOUT_IN_PROGRESS: "bg-amber-50 text-amber-800 ring-amber-200",
@@ -18,7 +19,7 @@ const pill = "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs fo
 
 /** Overall store status — always text + colour, never colour alone. */
 export function StatusBadge({ status, className }: { status: OverallStatus | null; className?: string }) {
-  if (!status) return <span className={cn(pill, "bg-gray-50 text-gray-600 ring-gray-200", className)}>Not yet finalised</span>;
+  if (!status) return <span className={cn(pill, "bg-gray-50 text-gray-600 ring-gray-200", className)}>{NO_STATUS_LABEL}</span>;
   return <span className={cn(pill, OVERALL[status], className)}>{OVERALL_STATUS_LABELS[status]}</span>;
 }
 
@@ -39,7 +40,7 @@ export function ModuleStatusBadge({ status, className }: { status: ModuleStatus;
   );
 }
 
-export function ApprovalBadge({ status, show }: { status: ApprovalStatus; show: boolean }) {
+export function ApprovalBadge({ status, show, approver }: { status: ApprovalStatus; show: boolean; approver?: string | null }) {
   if (!show) return null;
   const style =
     status === "APPROVED"
@@ -51,7 +52,7 @@ export function ApprovalBadge({ status, show }: { status: ApprovalStatus; show: 
   return (
     <span className={cn(pill, style)}>
       <Icon className="size-3" aria-hidden />
-      HQ: {APPROVAL_STATUS_LABELS[status]}
+      {approver ?? "HQ"}: {APPROVAL_STATUS_LABELS[status]}
     </span>
   );
 }

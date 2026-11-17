@@ -9,19 +9,19 @@ import { MODULE_STATUS_LABELS } from "@/lib/status";
 /** GET /api/reports/delays — overdue modules sorted by days overdue; ?format=xlsx. */
 export async function GET(request: Request) {
   return handle(async () => {
-    const user = await requireApiUser(["SUPER_ADMIN", "REGIONAL_MANAGER"]);
+    const user = await requireApiUser(["SUPER_ADMIN", "REGIONAL_MANAGER", "TEAM_MEMBER"]);
     const rows = await delaysReport(user);
     if (new URL(request.url).searchParams.get("format") === "xlsx") {
       return xlsxResponse("delays-report.xlsx", [
         {
-          name: "Overdue modules",
+          name: "Overdue steps",
           columns: [
             { header: "Store code", key: "code", width: 20 },
             { header: "Store", key: "store", width: 30 },
             { header: "City", key: "city" },
             { header: "State", key: "state" },
             { header: "Store owner", key: "owner", width: 28 },
-            { header: "Module", key: "module", width: 32 },
+            { header: "Step", key: "module", width: 32 },
             { header: "Status", key: "status" },
             { header: "Planned end", key: "end", width: 14 },
             { header: "Days overdue", key: "days", width: 12 },

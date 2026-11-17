@@ -8,8 +8,9 @@ export const SETTING_KEYS = {
   lastOverdueCheck: "last_overdue_check",
 } as const;
 
-export async function getTargetLaunchOffsetDays(): Promise<number> {
-  const row = await prisma.appSetting.findUnique({ where: { key: SETTING_KEYS.targetLaunchOffsetDays } });
+/** Pass the transaction client when called inside a transaction, so the read uses the same connection. */
+export async function getTargetLaunchOffsetDays(db: Pick<typeof prisma, "appSetting"> = prisma): Promise<number> {
+  const row = await db.appSetting.findUnique({ where: { key: SETTING_KEYS.targetLaunchOffsetDays } });
   return typeof row?.value === "number" ? row.value : DEFAULT_TARGET_LAUNCH_OFFSET_DAYS;
 }
 

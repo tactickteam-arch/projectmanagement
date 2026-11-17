@@ -1,5 +1,5 @@
 import type { ApprovalStatus, ModuleStatus, OverallStatus } from "@/generated/prisma/enums";
-import { FITOUT_MODULE_TYPES, SETUP_MODULE_TYPES, STORE_LOCATION, TOKEN_ADVANCE } from "@/modules";
+import { KEY_HANDOVER, LANDLORD_CHECK, LOCATION_FILING, MODULE_TYPES, SETUP_TRACK_TYPES, TOKEN_ADVANCE } from "@/modules";
 
 export interface ModuleState {
   moduleType: string;
@@ -16,55 +16,62 @@ export interface StoreState {
 /** Statuses only HQ can set; automatic updates never overwrite them. */
 export const MANUAL_STATUSES: readonly OverallStatus[] = ["ON_HOLD", "DROPPED"];
 
+/** A step is done (green) when Completed and approved. Steps without an approver are approved
+ * automatically when the owning team marks them Completed. */
 export function isApproved(m: ModuleState): boolean {
   return m.status === "COMPLETED" && m.approvalStatus === "APPROVED";
 }
+export const isDone = isApproved;
 
-/** Setup modules only (Key Handover milestone excluded). */
-export function setupModules<T extends ModuleState>(modules: T[]): T[] {
-  return modules.filter((m) => SETUP_MODULE_TYPES.includes(m.moduleType));
+/** Only the steps of the current flow (rows of retired module types are ignored). */
+export function flowModules<T extends ModuleState>(modules: T[]): T[] {
+  return modules.filter((m) => MODULE_TYPES.includes(m.moduleType));
 }
 
 /**
- * Spec "Overall status rules", checked from the furthest stage back:
- *   Launched            — actual launch date entered
- *   Ready for Launch    — all modules approved (the 7 setup modules)
- *   Fit-out in Progress — any fit-out module started (status other than Not Started)
- *   Keys Received       — key handover date entered
- *   Token Paid          — Token Advance Completed
- *   Location Finalised  — Store Location approved by HQ
- *   null                — none of the above yet (OPEN_QUESTIONS.md)
+ * Overall status, following the launch flow, checked from the furthest stage back:
+ *   Launched (soft launch)  — actual launch date entered (step 7)
+ *   Ready for Launch        — every step done: steps 1–5 and all department tracks green
+ *   Store setup in progress — keys accepted and any department track started (step 6)
+ *   Keys Received           — RK accepted the key handover (key handover date set, step 5)
+ *   Token Paid              — Token advance approved by Accounts (step 3)
+ *   Landlord check cleared  — 8-point landlord check approved by RK (step 2)
+ *   Location approved       — Location filing approved by Boss + CEO (step 1)
+ *   null                    — location filing still in progress
  * On Hold / Dropped are set manually by HQ and are kept as-is.
  */
 export function computeOverallStatus(store: StoreState, modules: ModuleState[]): OverallStatus | null {
   if (store.overallStatus && MANUAL_STATUSES.includes(store.overallStatus)) {
     return store.overallStatus;
   }
-  const byType = new Map(modules.map((m) => [m.moduleType, m]));
-  const setup = setupModules(modules);
+  const byType = new Map(flowModules(modules).map((m) => [m.moduleType, m]));
+  const done = (t: string) => {
+    const m = byType.get(t);
+    return m !== undefined && isApproved(m);
+  };
 
   if (store.actualLaunchDate) return "LAUNCHED";
-  if (setup.length === SETUP_MODULE_TYPES.length && setup.every(isApproved)) return "READY_FOR_LAUNCH";
-  if (FITOUT_MODULE_TYPES.some((t) => (byType.get(t)?.status ?? "NOT_STARTED") !== "NOT_STARTED")) {
+  if (MODULE_TYPES.every(done)) return "READY_FOR_LAUNCH";
+  if (store.keyHandoverDate && SETUP_TRACK_TYPES.some((t) => (byType.get(t)?.status ?? "NOT_STARTED") !== "NOT_STARTED")) {
     return "FITOUT_IN_PROGRESS";
   }
-  if (store.keyHandoverDate) return "KEYS_RECEIVED";
-  if (byType.get(TOKEN_ADVANCE)?.status === "COMPLETED") return "TOKEN_PAID";
-  const location = byType.get(STORE_LOCATION);
-  if (location && isApproved(location)) return "LOCATION_FINALISED";
+  if (store.keyHandoverDate || done(KEY_HANDOVER)) return "KEYS_RECEIVED";
+  if (done(TOKEN_ADVANCE)) return "TOKEN_PAID";
+  if (done(LANDLORD_CHECK)) return "PREMISES_CLEARED";
+  if (done(LOCATION_FILING)) return "LOCATION_FINALISED";
   return null;
 }
 
-/** Spec: Overall progress = approved modules ÷ total modules × 100 (7 setup modules; rounded). */
+/** Progress = steps done ÷ all steps × 100 (rounded). */
 export function computeProgressPercent(modules: ModuleState[]): number {
-  const setup = setupModules(modules);
-  if (setup.length === 0) return 0;
-  return Math.round((setup.filter(isApproved).length / SETUP_MODULE_TYPES.length) * 100);
+  return Math.round((countApproved(modules) / MODULE_TYPES.length) * 100);
 }
 
 export function countApproved(modules: ModuleState[]): number {
-  return setupModules(modules).filter(isApproved).length;
+  return flowModules(modules).filter(isApproved).length;
 }
+
+export const TOTAL_STEPS = MODULE_TYPES.length;
 
 /** Spec: Overdue = planned end date has passed and status is not Completed. */
 export function isOverdue(plannedEnd: Date | null, status: ModuleStatus, today: Date): boolean {
@@ -76,19 +83,23 @@ export function daysOverdue(plannedEnd: Date | null, status: ModuleStatus, today
   return Math.round((today.getTime() - (plannedEnd as Date).getTime()) / 86_400_000);
 }
 
+export const NO_STATUS_LABEL = "Location filing";
+
 export const OVERALL_STATUS_LABELS: Record<OverallStatus, string> = {
-  LOCATION_FINALISED: "Location Finalised",
-  TOKEN_PAID: "Token Paid",
-  KEYS_RECEIVED: "Keys Received",
-  FITOUT_IN_PROGRESS: "Fit-out in Progress",
-  READY_FOR_LAUNCH: "Ready for Launch",
-  LAUNCHED: "Launched",
+  LOCATION_FINALISED: "Location approved",
+  PREMISES_CLEARED: "Landlord check cleared",
+  TOKEN_PAID: "Token paid",
+  KEYS_RECEIVED: "Keys received",
+  FITOUT_IN_PROGRESS: "Store setup in progress",
+  READY_FOR_LAUNCH: "All departments green",
+  LAUNCHED: "Soft launched",
   ON_HOLD: "On Hold",
   DROPPED: "Dropped",
 };
 
 export const OVERALL_STATUS_ORDER: OverallStatus[] = [
   "LOCATION_FINALISED",
+  "PREMISES_CLEARED",
   "TOKEN_PAID",
   "KEYS_RECEIVED",
   "FITOUT_IN_PROGRESS",

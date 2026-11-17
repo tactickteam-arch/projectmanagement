@@ -6,25 +6,35 @@ import { Card } from "@/components/ui/card";
 import { requirePageUser } from "@/lib/auth/dal";
 import { daysBetween, todayInIndia } from "@/lib/dates";
 import { formatDateTime, formatINR } from "@/lib/format";
+import { prisma } from "@/lib/db";
 import { approvalsQueue } from "@/lib/queries";
+import { teamLabel } from "@/lib/teams";
 
 export const metadata = { title: "Approvals" };
 
 export default async function ApprovalsPage() {
-  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER"]);
+  const user = await requirePageUser(["SUPER_ADMIN", "REGIONAL_MANAGER", "TEAM_MEMBER"]);
   const rows = await approvalsQueue(user);
-  const canDecide = user.role === "SUPER_ADMIN";
+  const canDecide = (team: string | null) => user.role === "SUPER_ADMIN" || (team !== null && user.teams.includes(team));
+  const approverTeams = (await prisma.moduleTemplate.findMany({ select: { approverTeam: true } })).map((t) => t.approverTeam);
+  const myApproverTeams = user.teams.filter((t) => approverTeams.includes(t));
   const today = todayInIndia();
 
   return (
     <>
       <PageHeader
         title="Approvals queue"
-        description={`Modules marked Completed and waiting for HQ approval, oldest first.${canDecide ? "" : " Regional Managers can review and comment; approval is HQ-only for now."}`}
+        description={
+          user.role === "SUPER_ADMIN"
+            ? "Steps marked Completed and waiting for approval (Boss + CEO, RK, Accounts), oldest first. As HQ you can decide any of them."
+            : myApproverTeams.length
+              ? `Steps waiting for your approval as ${myApproverTeams.map(teamLabel).join(", ")}, oldest first.`
+              : "You are not in an approving team (Boss + CEO, RK or Accounts), so nothing is routed to you here."
+        }
       />
       {rows.length === 0 ? (
         <EmptyState icon={<ClipboardCheck className="size-8" />} title="Nothing waiting for approval">
-          New submissions appear here when a store owner marks a module Completed.
+          Steps appear here when their team marks them Completed.
         </EmptyState>
       ) : (
         <Card className="gap-0 overflow-hidden py-0">
@@ -35,8 +45,10 @@ export default async function ApprovalsPage() {
                 <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
                     <Link href={`/stores/${r.store.id}/modules/${r.moduleType}`} className="font-medium hover:underline">
+                      {r.step ? `${r.step} · ` : ""}
                       {r.displayName}
                     </Link>
+                    {r.approverTeam && <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900 ring-1 ring-amber-200">Approval: {teamLabel(r.approverTeam)}</span>}
                     <p className="text-sm text-muted-foreground">
                       <Link href={`/stores/${r.store.id}`} className="hover:underline">
                         {r.store.name}
@@ -59,7 +71,7 @@ export default async function ApprovalsPage() {
                     <Link href={`/stores/${r.store.id}/modules/${r.moduleType}`} className="text-sm text-primary hover:underline">
                       Review
                     </Link>
-                    {canDecide && <DecisionButtons moduleId={r.id} moduleName={r.displayName} />}
+                    {canDecide(r.approverTeam) && <DecisionButtons moduleId={r.id} moduleName={r.displayName} />}
                   </div>
                 </li>
               );

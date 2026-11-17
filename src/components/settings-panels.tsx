@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, Loader2, Plus, UserCheck, UserX } from "lucide-react";
+import { KeyRound, Loader2, Plus, Users, UserCheck, UserX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -12,8 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { api, ApiError } from "@/lib/client-api";
 import { INDIA_STATES } from "@/lib/india-states";
+import { STORE_OWNER_TEAM, TEAM_KEYS, teamLabel, teamsLabel } from "@/lib/teams";
 
-const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: "SuperAdmin (HQ)", REGIONAL_MANAGER: "Regional Manager", STORE_OWNER: "Store Owner" };
+const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: "SuperAdmin (HQ)", REGIONAL_MANAGER: "Regional Manager", STORE_OWNER: "Store Owner", TEAM_MEMBER: "Sangeetha team" };
 
 export interface UserRow {
   id: string;
@@ -22,6 +23,7 @@ export interface UserRow {
   phone: string | null;
   role: string;
   regionStates: string[];
+  teams: string[];
   isActive: boolean;
   stores: number;
 }
@@ -53,7 +55,7 @@ export function UsersPanel({ users, currentUserId }: { users: UserRow[]; current
           <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
               <th className="px-4 py-2.5 font-medium">Name</th>
-              <th className="px-4 py-2.5 font-medium">Role</th>
+              <th className="px-4 py-2.5 font-medium">Role · teams</th>
               <th className="px-4 py-2.5 font-medium">Stores / region</th>
               <th className="px-4 py-2.5 font-medium">Status</th>
               <th className="px-4 py-2.5 text-right font-medium">Actions</th>
@@ -69,15 +71,25 @@ export function UsersPanel({ users, currentUserId }: { users: UserRow[]; current
                     {u.phone ? ` · ${u.phone}` : ""}
                   </p>
                 </td>
-                <td className="px-4 py-2.5">{ROLE_LABEL[u.role] ?? u.role}</td>
+                <td className="px-4 py-2.5">
+                  {ROLE_LABEL[u.role] ?? u.role}
+                  {u.teams.length > 0 && <p className="text-xs text-muted-foreground">{teamsLabel(u.teams)}</p>}
+                </td>
                 <td className="px-4 py-2.5 text-muted-foreground">
-                  {u.role === "STORE_OWNER" ? `${u.stores} store${u.stores === 1 ? "" : "s"}` : u.role === "REGIONAL_MANAGER" ? u.regionStates.join(", ") || "—" : "All stores"}
+                  {u.role === "STORE_OWNER"
+                    ? `${u.stores} store${u.stores === 1 ? "" : "s"}`
+                    : u.role === "REGIONAL_MANAGER"
+                      ? u.regionStates.join(", ") || "—"
+                      : u.role === "TEAM_MEMBER" && u.regionStates.length
+                        ? u.regionStates.join(", ")
+                        : "All stores"}
                 </td>
                 <td className="px-4 py-2.5">
                   <span className={u.isActive ? "text-emerald-700" : "text-muted-foreground"}>{u.isActive ? "Active" : "Deactivated"}</span>
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex justify-end gap-2">
+                    {u.role !== "STORE_OWNER" && <TeamsDialog user={u} />}
                     <ResetPasswordDialog user={u} />
                     {u.id !== currentUserId && (
                       <Button size="sm" variant="outline" onClick={() => toggle(u)} disabled={busy === u.id}>
@@ -101,6 +113,7 @@ function CreateUserDialog() {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState("STORE_OWNER");
   const [regions, setRegions] = useState<string[]>([]);
+  const [teams, setTeams] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
@@ -111,11 +124,12 @@ function CreateUserDialog() {
     setErrors({});
     try {
       await api("/api/admin/users", {
-        body: { name: f.get("name"), email: f.get("email"), phone: f.get("phone") || null, role, regionStates: regions, password: f.get("password") },
+        body: { name: f.get("name"), email: f.get("email"), phone: f.get("phone") || null, role, regionStates: regions, teams: role === "STORE_OWNER" ? [] : teams, password: f.get("password") },
       });
       toast.success("User created");
       setOpen(false);
       setRegions([]);
+      setTeams([]);
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError) setErrors({ ...err.fieldErrors, _: err.message });
@@ -160,14 +174,22 @@ function CreateUserDialog() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="STORE_OWNER">Store Owner</SelectItem>
+                <SelectItem value="TEAM_MEMBER">Sangeetha team (department)</SelectItem>
                 <SelectItem value="REGIONAL_MANAGER">Regional Manager</SelectItem>
                 <SelectItem value="SUPER_ADMIN">SuperAdmin (HQ)</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          {role === "REGIONAL_MANAGER" && (
+          {role !== "STORE_OWNER" && (
             <div className="space-y-1.5">
-              <Label>Region (states)</Label>
+              <Label>Teams{role === "TEAM_MEMBER" ? " (at least one)" : " (optional)"}</Label>
+              <TeamPicker value={teams} onChange={setTeams} />
+              {errors.teams && <p className="text-xs text-destructive">{errors.teams}</p>}
+            </div>
+          )}
+          {(role === "REGIONAL_MANAGER" || role === "TEAM_MEMBER") && (
+            <div className="space-y-1.5">
+              <Label>Region (states){role === "TEAM_MEMBER" ? " — leave empty for all India" : ""}</Label>
               <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border p-2">
                 {INDIA_STATES.map((s) => (
                   <button
@@ -196,6 +218,88 @@ function CreateUserDialog() {
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TeamPicker({ value, onChange, includeOwner }: { value: string[]; onChange: (v: string[]) => void; includeOwner?: boolean }) {
+  const keys = includeOwner ? [STORE_OWNER_TEAM, ...TEAM_KEYS] : TEAM_KEYS;
+  return (
+    <div className="flex flex-wrap gap-1.5 rounded-md border p-2">
+      {keys.map((t) => (
+        <button
+          key={t}
+          type="button"
+          aria-pressed={value.includes(t)}
+          onClick={() => onChange(value.includes(t) ? value.filter((x) => x !== t) : [...value, t])}
+          className={`rounded-full border px-2 py-0.5 text-xs ${value.includes(t) ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"}`}
+        >
+          {teamLabel(t)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function TeamsDialog({ user }: { user: UserRow }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [teams, setTeams] = useState(user.teams);
+  const [regions, setRegions] = useState(user.regionStates);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/admin/users/${user.id}`, { method: "PATCH", body: { teams, ...(user.role === "TEAM_MEMBER" ? { regionStates: regions } : {}) } });
+      toast.success(`Teams updated for ${user.name}`);
+      setOpen(false);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not update teams");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="ghost">
+          <Users className="size-4" /> Teams
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Teams for {user.name}</DialogTitle>
+          <DialogDescription>Teams decide which launch steps this person fills in and approves (see Steps &amp; approvals).</DialogDescription>
+        </DialogHeader>
+        <TeamPicker value={teams} onChange={setTeams} />
+        {user.role === "TEAM_MEMBER" && (
+          <div className="space-y-1.5">
+            <Label>Region (states) — leave empty for all India</Label>
+            <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border p-2">
+              {INDIA_STATES.map((s) => (
+                <button
+                  key={s.code}
+                  type="button"
+                  aria-pressed={regions.includes(s.code)}
+                  onClick={() => setRegions((r) => (r.includes(s.code) ? r.filter((x) => x !== s.code) : [...r, s.code]))}
+                  className={`rounded-full border px-2 py-0.5 text-xs ${regions.includes(s.code) ? "border-primary bg-primary/10 text-primary" : ""}`}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button onClick={save} disabled={busy}>
+            {busy && <Loader2 className="size-4 animate-spin" />} Save
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -336,12 +440,12 @@ export function SchedulingPanel({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Days after key handover (Day 0). Values from the spec are placeholders to confirm with Sangeetha.</p>
+      <p className="text-sm text-muted-foreground">Step 6 department tracks: days after the key handover is accepted (Day 0). Values are placeholders to confirm with Sangeetha.</p>
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full min-w-[480px] text-sm">
           <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
-              <th className="px-4 py-2.5 font-medium">Module</th>
+              <th className="px-4 py-2.5 font-medium">Department track</th>
               <th className="px-4 py-2.5 font-medium">Planned start (day)</th>
               <th className="px-4 py-2.5 font-medium">Duration (days)</th>
             </tr>
@@ -359,7 +463,7 @@ export function SchedulingPanel({
               </tr>
             ))}
             <tr>
-              <td className="px-4 py-2 font-medium">Target launch</td>
+              <td className="px-4 py-2 font-medium">Target soft launch</td>
               <td className="px-4 py-2">
                 <Input type="number" min={1} className="w-24" value={target} onChange={(e) => setTarget(Number(e.target.value))} aria-label="Target launch offset" />
               </td>
@@ -375,10 +479,104 @@ export function SchedulingPanel({
   );
 }
 
-export function BrandingItemsPanel({ items }: { items: string[] }) {
+export interface StepRow {
+  moduleType: string;
+  displayName: string;
+  step: number;
+  editTeams: string[];
+  approverTeam: string | null;
+}
+
+/** Who fills in each launch step and who approves it (defaults come from the launch flow). */
+export function StepsPanel({ steps }: { steps: StepRow[] }) {
+  const router = useRouter();
+  const [rows, setRows] = useState(steps);
+  const [busy, setBusy] = useState(false);
+  const set = (i: number, patch: Partial<StepRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  async function save() {
+    setBusy(true);
+    try {
+      for (const r of rows) {
+        const orig = steps.find((x) => x.moduleType === r.moduleType);
+        if (orig && JSON.stringify(orig.editTeams) === JSON.stringify(r.editTeams) && orig.approverTeam === r.approverTeam) continue;
+        await api(`/api/admin/module-templates/${r.moduleType}`, { method: "PATCH", body: { editTeams: r.editTeams, approverTeam: r.approverTeam } });
+      }
+      toast.success("Steps saved");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not save");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Defaults follow the launch flow. “Store owner” means the store&apos;s assigned owner. A step without an approver turns green as soon as its team marks it done. HQ (SuperAdmin) can always fill in and approve any step.
+      </p>
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <table className="w-full min-w-[820px] text-sm">
+          <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2.5 font-medium">Step</th>
+              <th className="px-4 py-2.5 font-medium">Filled in by</th>
+              <th className="px-4 py-2.5 font-medium">Approved by</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.moduleType} className="border-b align-top last:border-0">
+                <td className="px-4 py-3 font-medium whitespace-nowrap">
+                  {r.step} · {r.displayName}
+                </td>
+                <td className="px-4 py-3">
+                  <TeamPicker value={r.editTeams} onChange={(v) => set(i, { editTeams: v })} includeOwner />
+                </td>
+                <td className="px-4 py-3">
+                  <Select value={r.approverTeam ?? "NONE"} onValueChange={(v) => set(i, { approverTeam: v === "NONE" ? null : v })}>
+                    <SelectTrigger className="w-56" aria-label={`Approver of ${r.displayName}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NONE">No approval — team marks it done</SelectItem>
+                      {TEAM_KEYS.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {teamLabel(t)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Button onClick={save} disabled={busy}>
+        {busy && <Loader2 className="size-4 animate-spin" />} Save steps
+      </Button>
+    </div>
+  );
+}
+
+/** Default rows of the checklists inside steps (8-point landlord check, 8-point handover check, branding items). */
+export function ChecklistsPanel({ checklists }: { checklists: { moduleType: string; stepName: string; fieldKey: string; label: string; items: string[] }[] }) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      {checklists.map((c) => (
+        <ChecklistEditor key={`${c.moduleType}.${c.fieldKey}`} {...c} />
+      ))}
+    </div>
+  );
+}
+
+function ChecklistEditor({ moduleType, stepName, fieldKey, label, items }: { moduleType: string; stepName: string; fieldKey: string; label: string; items: string[] }) {
   const router = useRouter();
   const [text, setText] = useState(items.join("\n"));
   const [busy, setBusy] = useState(false);
+  const id = `cl-${moduleType}-${fieldKey}`;
   async function save() {
     setBusy(true);
     try {
@@ -386,8 +584,8 @@ export function BrandingItemsPanel({ items }: { items: string[] }) {
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
-      await api("/api/admin/module-templates/INSHOP_BRANDING", { method: "PATCH", body: { brandingDefaultItems: list } });
-      toast.success("Branding checklist saved. New branding forms start with these items.");
+      await api(`/api/admin/module-templates/${moduleType}`, { method: "PATCH", body: { checklistItems: { [fieldKey]: list } } });
+      toast.success(`${label} saved. Stores that have not started this step get the new list.`);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Could not save");
@@ -396,11 +594,13 @@ export function BrandingItemsPanel({ items }: { items: string[] }) {
     }
   }
   return (
-    <div className="max-w-md space-y-3">
-      <Label htmlFor="bi">Default branding checklist items (one per line)</Label>
-      <Textarea id="bi" value={text} onChange={(e) => setText(e.target.value)} rows={8} />
-      <Button onClick={save} disabled={busy}>
-        {busy && <Loader2 className="size-4 animate-spin" />} Save items
+    <div className="space-y-2">
+      <Label htmlFor={id}>
+        {label} <span className="font-normal text-muted-foreground">· {stepName} · one per line</span>
+      </Label>
+      <Textarea id={id} value={text} onChange={(e) => setText(e.target.value)} rows={9} />
+      <Button onClick={save} disabled={busy} size="sm">
+        {busy && <Loader2 className="size-4 animate-spin" />} Save
       </Button>
     </div>
   );

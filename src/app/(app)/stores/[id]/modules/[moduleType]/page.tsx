@@ -1,6 +1,7 @@
-import { redirect } from "next/navigation";
 import { Comments } from "@/components/comments";
+import { AfterApprovalForm } from "@/components/after-approval-form";
 import { DecisionButtons } from "@/components/decision-buttons";
+import { DONE_BY_STYLE } from "@/components/launch-flow";
 import { displayValue } from "@/lib/field-display";
 import { ModuleForm } from "@/components/module-form";
 import { PageHeader } from "@/components/page-header";
@@ -12,10 +13,12 @@ import { requirePageUser } from "@/lib/auth/dal";
 import { can } from "@/lib/auth/permissions";
 import { formatDate, formatDateTime, formatINR } from "@/lib/format";
 import { getStoreDetailForPage, type ModuleView } from "@/lib/queries";
+import { teamLabel, teamsLabel } from "@/lib/teams";
+import { cn } from "@/lib/utils";
 import { listComments } from "@/lib/services/comments";
 import { notFound } from "next/navigation";
 
-export const metadata = { title: "Module" };
+export const metadata = { title: "Step" };
 
 export default async function ModulePage({ params }: PageProps<"/stores/[id]/modules/[moduleType]">) {
   const user = await requirePageUser();
@@ -23,27 +26,27 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
   const store = await getStoreDetailForPage(user, id);
   const m = store.modules.find((x) => x.moduleType === moduleType);
   if (!m) notFound();
-  if (m.isMilestone) redirect(`/stores/${id}/key-handover`);
 
-  const isOwner = can.editModules(user, store);
-  const canApprove = can.approveModules(user, store);
+  const isOwner = can.editModule(user, store, m);
+  const canApprove = can.approveModule(user, store, m);
+  const approver = m.approverTeam ? teamLabel(m.approverTeam) : null;
   const comments = (await listComments(user, m.id)).map((c) => ({ ...c, createdAt: c.createdAt.toISOString() }));
   const editableFiles = isOwner && !(m.status === "COMPLETED");
   const files = (tag: string) => m.attachments.filter((a) => a.tag === tag);
   const countingPhotos = m.attachments.filter((a) => a.fileType.startsWith("image/") && (!m.photoTag || a.tag === m.photoTag)).length;
   const fileFields = m.fields.filter((f) => f.type === "file");
-  const hasChecklist = m.fields.some((f) => f.type === "checklist");
-  const home = user.role === "STORE_OWNER" ? { label: "My stores", href: "/owner" } : { label: "Dashboard", href: "/hq" };
+  const home = user.role === "STORE_OWNER" ? { label: "My stores", href: "/owner" } : user.role === "TEAM_MEMBER" ? { label: "My tasks", href: "/tasks" } : { label: "Dashboard", href: "/hq" };
+  const afterValue = m.afterApproval ? ((m.details[m.afterApproval.key] as string | undefined) ?? null) : null;
 
   return (
     <>
       <PageHeader
         crumbs={[home, { label: store.name, href: `/stores/${store.id}` }, { label: m.displayName }]}
-        title={m.displayName}
+        title={`${m.step} · ${m.displayName}`}
         description={
           <span className="flex flex-wrap items-center gap-1.5">
             <ModuleStatusBadge status={m.status} />
-            <ApprovalBadge status={m.approvalStatus} show={m.status === "COMPLETED" || m.approvalStatus !== "PENDING"} />
+            <ApprovalBadge status={m.approvalStatus} show={!!approver && (m.status === "COMPLETED" || m.approvalStatus !== "PENDING")} approver={approver} />
             <OverdueBadge days={m.daysOverdue} />
             <span className="text-xs">
               {store.storeCode} · last updated {formatDateTime(m.updatedAt)}
@@ -56,14 +59,17 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
 
       {m.approvalStatus === "REJECTED" && m.approvalComment && (
         <Alert className="mb-4 border-amber-300 bg-amber-50">
-          <AlertTitle>Rejected by HQ{m.approvedBy ? ` (${m.approvedBy})` : ""}</AlertTitle>
+          <AlertTitle>
+            Sent back by {approver ?? "HQ"}
+            {m.approvedBy ? ` (${m.approvedBy})` : ""}
+          </AlertTitle>
           <AlertDescription className="text-amber-900">“{m.approvalComment}”</AlertDescription>
         </Alert>
       )}
-      {m.approvalStatus === "APPROVED" && (
+      {m.done && (
         <Alert className="mb-4 border-emerald-200 bg-emerald-50">
           <AlertTitle>
-            Approved by {m.approvedBy ?? "HQ"} on {formatDateTime(m.approvedAt)}
+            {approver ? `Approved by ${m.approvedBy ?? approver} (${approver})` : `Marked done by ${m.approvedBy ?? teamsLabel(m.editTeams)}`} on {formatDateTime(m.approvedAt)}
           </AlertTitle>
           {m.approvalComment && <AlertDescription>“{m.approvalComment}”</AlertDescription>}
         </Alert>
@@ -78,18 +84,29 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-4">
           {isOwner ? (
-            <ModuleForm storeId={store.id} m={m} keyHandoverDate={store.keyHandoverDate} countingPhotos={countingPhotos} />
+            <ModuleForm storeId={store.id} m={m} countingPhotos={countingPhotos} />
           ) : (
             <ReadOnlyModule m={m} />
           )}
         </div>
         <div className="space-y-4">
+          <StepInfo m={m} approver={approver} />
+          {m.afterApproval && m.done && (
+            <AfterApprovalForm
+              moduleId={m.id}
+              label={m.afterApproval.label}
+              title={afterValue ? m.afterApproval.doneText : m.afterApproval.pendingText}
+              value={afterValue}
+              canEdit={can.recordAfterApproval(user, store, m.afterApproval.teams)}
+              teams={teamsLabel(m.afterApproval.teams)}
+            />
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Photos &amp; documents</CardTitle>
               <p className="text-xs text-muted-foreground">
-                {m.minPhotos} photo{m.minPhotos > 1 ? "s" : ""} required to mark Completed
-                {m.photoTag === "photo_final" ? " (final store photos)" : ""} · {countingPhotos} uploaded. JPG, PNG, WebP or PDF, up to 10 MB.
+                {m.minPhotos > 0 ? `${m.minPhotos} photo${m.minPhotos > 1 ? "s" : ""} required to mark Completed · ${countingPhotos} uploaded. ` : "No photos required. "}
+                JPG, PNG, WebP or PDF, up to 10 MB.
               </p>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -104,14 +121,11 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
                   photosOnly={(f.attachmentTag ?? "").startsWith("photo")}
                 />
               ))}
-              {hasChecklist && (
-                <Uploader moduleId={m.id} tag="photo_branding_item" label="Branding item photos" files={files("photo_branding_item")} canEdit={editableFiles} photosOnly />
-              )}
               <Uploader moduleId={m.id} tag="photo_before" label="Photos — before" files={files("photo_before")} canEdit={editableFiles} photosOnly />
               <Uploader moduleId={m.id} tag="photo_during" label="Photos — during" files={files("photo_during")} canEdit={editableFiles} photosOnly />
               <Uploader moduleId={m.id} tag="photo_after" label="Photos — after" files={files("photo_after")} canEdit={editableFiles} photosOnly />
               <Uploader moduleId={m.id} tag="invoice" label="Invoices & documents" files={[...files("invoice"), ...files("document")]} canEdit={editableFiles} />
-              {isOwner && m.status === "COMPLETED" && <p className="text-xs text-muted-foreground">Files are locked while the module is Completed.</p>}
+              {isOwner && m.status === "COMPLETED" && <p className="text-xs text-muted-foreground">Files are locked while the step is Completed.</p>}
             </CardContent>
           </Card>
           <Card>
@@ -128,6 +142,41 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
   );
 }
 
+function StepInfo({ m, approver }: { m: ModuleView; approver: string | null }) {
+  return (
+    <Card className="gap-3">
+      <CardHeader>
+        <CardTitle className="text-base">Step {m.step} in the launch flow</CardTitle>
+        <p className="text-sm text-muted-foreground">{m.summary}</p>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <p>
+          <span className={cn("mr-2 inline-block rounded border px-1.5 py-0.5 text-xs font-medium", DONE_BY_STYLE[m.doneBy].box)}>{DONE_BY_STYLE[m.doneBy].label}</span>
+          {m.doneByLabel}
+        </p>
+        <p>
+          <span className="text-muted-foreground">Filled in by:</span> {teamsLabel(m.editTeams)}
+        </p>
+        <p>
+          <span className="text-muted-foreground">{approver ? "Approval:" : "Owner:"}</span> {approver ?? teamsLabel(m.editTeams)} — {m.approvalNote}
+        </p>
+        {m.requires.length > 0 && (
+          <p>
+            <span className="text-muted-foreground">Starts after:</span> {m.requires.join(", ")}
+            {m.waitingFor.length > 0 && <span className="ml-1 text-amber-700">(waiting for {m.waitingFor.join(", ")})</span>}
+          </p>
+        )}
+        {m.notes.map((n) => (
+          <p key={n} className="text-muted-foreground">
+            {n}
+          </p>
+        ))}
+        {m.systemAction && <p className="rounded bg-sky-100 px-2 py-1 text-xs text-sky-900">{m.systemAction}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ReadOnlyModule({ m }: { m: ModuleView }) {
   const row = (k: string, v: string) => (
     <div key={k}>
@@ -135,8 +184,27 @@ function ReadOnlyModule({ m }: { m: ModuleView }) {
       <dd className="mt-0.5 text-sm">{v}</dd>
     </div>
   );
+  const tasks = m.fields.filter((f) => f.type === "task");
   return (
     <>
+      {tasks.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Points</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1.5 text-sm">
+              {tasks.map((t) => (
+                <li key={t.key} className="flex items-center gap-2">
+                  <span className={m.details[t.key] === true ? "text-emerald-700" : "text-muted-foreground"}>{m.details[t.key] === true ? "✓" : "○"}</span>
+                  {t.label}
+                  {t.owner && <span className="text-xs text-muted-foreground">{t.owner}</span>}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Status, schedule &amp; cost</CardTitle>
@@ -159,7 +227,8 @@ function ReadOnlyModule({ m }: { m: ModuleView }) {
         <CardContent>
           <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
             {m.fields
-              .filter((f) => f.type !== "file")
+              .filter((f) => f.type !== "file" && f.type !== "task")
+              .filter((f) => !f.showWhen || m.details[f.showWhen.key] === f.showWhen.equals)
               .map((f) =>
                 f.type === "checklist" ? (
                   <div key={f.key} className="sm:col-span-2">
@@ -169,19 +238,21 @@ function ReadOnlyModule({ m }: { m: ModuleView }) {
                         <table className="w-full text-sm">
                           <thead className="text-left text-xs text-muted-foreground">
                             <tr>
-                              <th className="py-1 font-medium">Item</th>
-                              <th className="py-1 font-medium">Qty</th>
-                              <th className="py-1 font-medium">Received</th>
-                              <th className="py-1 font-medium">Installed</th>
+                              {(f.itemFields ?? []).map((c) => (
+                                <th key={c.key} className="py-1 font-medium">
+                                  {c.label}
+                                </th>
+                              ))}
                             </tr>
                           </thead>
                           <tbody>
                             {(m.details[f.key] as Record<string, unknown>[]).map((r, i) => (
                               <tr key={i} className="border-t">
-                                <td className="py-1">{String(r.itemName ?? "")}</td>
-                                <td className="py-1">{r.quantity === null || r.quantity === undefined ? "—" : String(r.quantity)}</td>
-                                <td className="py-1">{r.received ? "Yes" : "No"}</td>
-                                <td className="py-1">{r.installed ? "Yes" : "No"}</td>
+                                {(f.itemFields ?? []).map((c) => (
+                                  <td key={c.key} className="py-1 pr-2">
+                                    {displayValue(c, r[c.key])}
+                                  </td>
+                                ))}
                               </tr>
                             ))}
                           </tbody>

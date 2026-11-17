@@ -1,15 +1,14 @@
-import { CalendarDays, ChevronRight, KeyRound, MapPin, MessageSquare, Paperclip, User } from "lucide-react";
+import { CalendarDays, ClipboardCheck, KeyRound, ListTodo, MapPin, User } from "lucide-react";
 import Link from "next/link";
 import { ActivityList } from "@/components/activity-list";
-import { DecisionButtons } from "@/components/decision-buttons";
 import { FileGallery } from "@/components/file-list";
 import { PageHeader } from "@/components/page-header";
 import { ProgressBar } from "@/components/progress-bar";
-import { ApprovalBadge, ModuleStatusBadge, OverdueBadge, StatusBadge } from "@/components/status-badge";
+import { LaunchFlow } from "@/components/launch-flow";
+import { StatusBadge } from "@/components/status-badge";
 import { EditStoreDialog, StatusOverride } from "@/components/store-actions";
 import { Timeline } from "@/components/timeline";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { requirePageUser } from "@/lib/auth/dal";
@@ -17,7 +16,9 @@ import { can } from "@/lib/auth/permissions";
 import { formatDateOnly, todayInIndia } from "@/lib/dates";
 import { formatDate, formatINR } from "@/lib/format";
 import { stateName } from "@/lib/india-states";
-import { getStoreDetailForPage, type ModuleView } from "@/lib/queries";
+import { getStoreDetailForPage, type StoreDetail } from "@/lib/queries";
+import type { AccessSubject } from "@/lib/auth/access";
+import { teamLabel } from "@/lib/teams";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Store" };
@@ -26,17 +27,14 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
   const user = await requirePageUser();
   const { id } = await params;
   const store = await getStoreDetailForPage(user, id);
-  const isOwner = can.editModules(user, store);
-  const canApprove = can.approveModules(user, store);
   const today = formatDateOnly(todayInIndia());
-  const setup = store.modules.filter((m) => !m.isMilestone);
-  const handover = store.modules.find((m) => m.isMilestone);
-  const token = store.modules.find((m) => m.moduleType === "TOKEN_ADVANCE");
+  const setup = store.modules;
+  const tracks = store.modules.filter((m) => m.step === 6);
   const moduleNames = Object.fromEntries(store.modules.map((m) => [m.id, m.displayName]));
   const allFiles = store.modules.flatMap((m) => m.attachments.map((a) => ({ ...a, module: m.displayName })));
   const estTotal = setup.reduce((t, m) => t + (m.estCost ?? 0), 0);
   const actTotal = setup.reduce((t, m) => t + (m.actualCost ?? 0), 0);
-  const home = user.role === "STORE_OWNER" ? { label: "My stores", href: "/owner" } : { label: "Dashboard", href: "/hq" };
+  const home = user.role === "STORE_OWNER" ? { label: "My stores", href: "/owner" } : user.role === "TEAM_MEMBER" ? { label: "My tasks", href: "/tasks" } : { label: "Dashboard", href: "/hq" };
 
   return (
     <>
@@ -74,13 +72,15 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
             <p className="text-sm text-muted-foreground">Progress</p>
             <p className="mt-1 text-2xl font-semibold tabular-nums">{store.progressPercent}%</p>
             <ProgressBar value={store.progressPercent} label="Store progress" className="mt-2" />
-            <p className="mt-1.5 text-xs text-muted-foreground">{store.approvedCount} of 7 modules approved by HQ</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {store.approvedCount} of {store.totalSteps} steps done
+            </p>
           </CardContent>
         </Card>
         <Card className="gap-2 py-4">
           <CardContent className="px-4">
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <KeyRound className="size-3.5" /> Key handover (Day 0)
+              <KeyRound className="size-3.5" /> Keys received (Day 0)
             </p>
             <p className="mt-1 text-lg font-semibold">{formatDate(store.keyHandoverDate)}</p>
             <p className="text-xs text-muted-foreground">
@@ -94,7 +94,7 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
               <CalendarDays className="size-3.5" /> Launch
             </p>
             <p className="mt-1 text-lg font-semibold">{store.actualLaunchDate ? formatDate(store.actualLaunchDate) : formatDate(store.targetLaunchDate)}</p>
-            <p className="text-xs text-muted-foreground">{store.actualLaunchDate ? `Launched (target ${formatDate(store.targetLaunchDate)})` : "Target launch date"}</p>
+            <p className="text-xs text-muted-foreground">{store.actualLaunchDate ? `Soft launched (target ${formatDate(store.targetLaunchDate)})` : "Target soft launch date"}</p>
           </CardContent>
         </Card>
         <Card className="gap-2 py-4">
@@ -106,11 +106,11 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
         </Card>
       </div>
 
-      {isOwner && <NextStep store={store} token={token} handover={handover} />}
+      <YourActions store={store} user={user} />
 
-      <Tabs defaultValue="modules" className="mt-6">
+      <Tabs defaultValue="flow" className="mt-6">
         <TabsList className="flex-wrap">
-          <TabsTrigger value="modules">Modules</TabsTrigger>
+          <TabsTrigger value="flow">Launch flow</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="costs">Costs</TabsTrigger>
           <TabsTrigger value="files">Files ({allFiles.length})</TabsTrigger>
@@ -118,19 +118,17 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
           <TabsTrigger value="info">Store info</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="modules" className="mt-4 space-y-2">
-          {store.modules.map((m) => (
-            <ModuleRow key={m.id} m={m} storeId={store.id} canApprove={canApprove} keyHandoverDate={store.keyHandoverDate} />
-          ))}
+        <TabsContent value="flow" className="mt-4">
+          <LaunchFlow store={store} user={user} />
         </TabsContent>
 
         <TabsContent value="timeline" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Planned vs actual</CardTitle>
+              <CardTitle className="text-base">Store setup tracks: planned vs actual</CardTitle>
             </CardHeader>
             <CardContent>
-              <Timeline modules={setup} handover={store.keyHandoverDate} targetLaunch={store.targetLaunchDate} today={today} />
+              <Timeline modules={tracks} handover={store.keyHandoverDate} targetLaunch={store.targetLaunchDate} today={today} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -141,7 +139,7 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
               <table className="w-full min-w-[520px] text-sm">
                 <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
                   <tr>
-                    <th className="px-4 py-2.5 font-medium">Module</th>
+                    <th className="px-4 py-2.5 font-medium">Step</th>
                     <th className="px-4 py-2.5 font-medium">Vendor</th>
                     <th className="px-4 py-2.5 text-right font-medium">Estimated</th>
                     <th className="px-4 py-2.5 text-right font-medium">Actual</th>
@@ -216,8 +214,8 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
                 <Info k="Floor" v={store.floor ? store.floor[0] + store.floor.slice(1).toLowerCase() : null} />
                 <Info k="Store owner" v={`${store.owner.name} · ${store.owner.email}${store.owner.phone ? ` · ${store.owner.phone}` : ""}`} />
                 <Info k="Target launch" v={formatDate(store.targetLaunchDate)} />
-                <Info k="Key handover" v={formatDate(store.keyHandoverDate)} />
-                <Info k="Actual launch" v={formatDate(store.actualLaunchDate)} />
+                <Info k="Keys received (Day 0)" v={formatDate(store.keyHandoverDate)} />
+                <Info k="Soft launch" v={formatDate(store.actualLaunchDate)} />
               </dl>
             </CardContent>
           </Card>
@@ -236,88 +234,38 @@ function Info({ k, v }: { k: string; v: string | null | undefined }) {
   );
 }
 
-function ModuleRow({ m, storeId, canApprove, keyHandoverDate }: { m: ModuleView; storeId: string; canApprove: boolean; keyHandoverDate: string | null }) {
-  const href = m.isMilestone ? `/stores/${storeId}/key-handover` : `/stores/${storeId}/modules/${m.moduleType}`;
-  const pending = !m.isMilestone && m.status === "COMPLETED" && m.approvalStatus === "PENDING";
-  const photos = m.attachments.filter((a) => a.fileType.startsWith("image/")).length;
+/** What the signed-in user can do on this store now: steps their team fills in that are ready,
+ * and steps waiting for their approval. */
+function YourActions({ store, user }: { store: StoreDetail; user: AccessSubject }) {
+  const toDo = store.modules.filter((m) => !m.done && m.waitingFor.length === 0 && !(m.status === "COMPLETED" && m.approvalStatus === "PENDING") && can.editModule(user, store, m));
+  const toApprove = store.modules.filter((m) => m.status === "COMPLETED" && m.approvalStatus === "PENDING" && can.approveModule(user, store, m));
+  // SuperAdmin can act on every step; only show them approvals plus a short list.
+  const list = user.role === "SUPER_ADMIN" ? toDo.slice(0, 4) : toDo;
+  if (!list.length && !toApprove.length) return null;
   return (
-    <div className={cn("rounded-lg border bg-card p-3 sm:p-4", m.overdue && "border-red-300", m.isMilestone && "bg-sky-50/40")}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <Link href={href} className="group min-w-0 flex-1">
-          <p className="flex items-center gap-2 font-medium group-hover:underline">
-            {m.isMilestone && <KeyRound className="size-4 text-sky-700" aria-hidden />}
-            {m.displayName}
-            {m.isMilestone && <span className="text-xs font-normal text-muted-foreground">milestone · Day 0</span>}
-            <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-          </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {m.isMilestone ? (
-              <span className="text-xs text-muted-foreground">{keyHandoverDate ? `Keys received ${formatDate(keyHandoverDate)}` : "Keys not received yet"}</span>
-            ) : (
-              <>
-                <ModuleStatusBadge status={m.status} />
-                <ApprovalBadge status={m.approvalStatus} show={m.status === "COMPLETED" || m.approvalStatus !== "PENDING"} />
-                <OverdueBadge days={m.daysOverdue} />
-              </>
-            )}
-          </div>
-        </Link>
-        {canApprove && pending && <DecisionButtons moduleId={m.id} moduleName={m.displayName} />}
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {m.plannedStart && (
-          <span>
-            Planned {formatDate(m.plannedStart)} – {formatDate(m.plannedEnd)}
-          </span>
-        )}
-        {m.actualStart && (
-          <span>
-            Actual {formatDate(m.actualStart)} – {m.actualEnd ? formatDate(m.actualEnd) : "ongoing"}
-          </span>
-        )}
-        {m.vendorName && <span>Vendor: {m.vendorName}</span>}
-        <span className="flex items-center gap-1">
-          <Paperclip className="size-3" aria-hidden /> {photos}/{m.minPhotos} photo{m.minPhotos > 1 ? "s" : ""} min
-        </span>
-        {m.commentCount > 0 && (
-          <span className="flex items-center gap-1">
-            <MessageSquare className="size-3" aria-hidden /> {m.commentCount}
-          </span>
-        )}
-      </div>
-      {m.status === "BLOCKED" && m.blockerReason && <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-800">Blocked: {m.blockerReason}</p>}
-      {m.approvalStatus === "REJECTED" && m.approvalComment && (
-        <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900">
-          HQ: “{m.approvalComment}”{m.approvedBy ? ` — ${m.approvedBy}` : ""}
-        </p>
-      )}
-    </div>
+    <Alert className="mt-4 border-sky-200 bg-sky-50">
+      <ListTodo className="size-4" />
+      <AlertTitle>Your next actions</AlertTitle>
+      <AlertDescription>
+        <ul className="mt-1 flex flex-wrap gap-2">
+          {toApprove.map((m) => (
+            <li key={m.id}>
+              <Link href={`/stores/${store.id}/modules/${m.moduleType}`} className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-950 hover:bg-amber-100">
+                <ClipboardCheck className="size-3.5" aria-hidden /> Approve: {m.step}. {m.displayName}
+                {m.approverTeam ? ` (as ${teamLabel(m.approverTeam)})` : ""}
+              </Link>
+            </li>
+          ))}
+          {list.map((m) => (
+            <li key={m.id}>
+              <Link href={`/stores/${store.id}/modules/${m.moduleType}`} className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-xs font-medium hover:bg-accent">
+                {m.step}. {m.displayName}
+                {m.approvalStatus === "REJECTED" ? " — sent back" : m.status === "NOT_STARTED" ? " — ready to start" : ""}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
   );
-}
-
-function NextStep({ store, token, handover }: { store: { id: string; keyHandoverDate: string | null; overallStatus: string | null }; token?: ModuleView; handover?: ModuleView }) {
-  if (!store.keyHandoverDate && token?.status === "COMPLETED" && handover) {
-    return (
-      <Alert className="mt-4 border-sky-200 bg-sky-50">
-        <KeyRound className="size-4" />
-        <AlertTitle>Next: record the key handover</AlertTitle>
-        <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-          <span>Token Advance is complete. Enter the handover date — fit-out modules are scheduled automatically from it.</span>
-          <Button asChild size="sm">
-            <Link href={`/stores/${store.id}/key-handover`}>Record key handover</Link>
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
-  }
-  if (!store.keyHandoverDate) {
-    return (
-      <Alert className="mt-4">
-        <KeyRound className="size-4" />
-        <AlertTitle>Before fit-out</AlertTitle>
-        <AlertDescription>Complete Store Location and Token Advance. Key handover can be recorded once Token Advance is Completed.</AlertDescription>
-      </Alert>
-    );
-  }
-  return null;
 }

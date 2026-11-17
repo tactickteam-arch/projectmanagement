@@ -23,7 +23,7 @@ export function DecisionButtons({ moduleId, moduleName, size = "sm" }: { moduleI
     setError(null);
     try {
       await api(`/api/modules/${moduleId}/${kind}`, { body: { comment: comment.trim() || null } });
-      toast.success(kind === "approve" ? `${moduleName} approved` : `${moduleName} rejected and sent back to the store owner`);
+      toast.success(kind === "approve" ? `${moduleName} approved` : `${moduleName} sent back to the team`);
       setOpen(null);
       setComment("");
       router.refresh();
@@ -45,7 +45,7 @@ export function DecisionButtons({ moduleId, moduleName, size = "sm" }: { moduleI
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Approve {moduleName}?</DialogTitle>
-            <DialogDescription>The store owner is notified. Approved modules are locked for editing.</DialogDescription>
+            <DialogDescription>The team is notified. Approved steps are locked for editing, and the next steps can start.</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
             <Label htmlFor={`ac-${moduleId}`}>Comment (optional)</Label>
@@ -66,13 +66,13 @@ export function DecisionButtons({ moduleId, moduleName, size = "sm" }: { moduleI
       <Dialog open={open === "reject"} onOpenChange={(o) => setOpen(o ? "reject" : null)}>
         <DialogTrigger asChild>
           <Button size={size} variant="outline" className="border-red-200 text-red-700 hover:bg-red-50">
-            <X className="size-4" /> Reject
+            <X className="size-4" /> Send back
           </Button>
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reject {moduleName}</DialogTitle>
-            <DialogDescription>The module goes back to In Progress and your comment is shown to the store owner.</DialogDescription>
+            <DialogTitle>Send back {moduleName}</DialogTitle>
+            <DialogDescription>The step goes back to In Progress and your comment is shown to the team that owns it.</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
             <Label htmlFor={`rc-${moduleId}`}>What needs to change? (required)</Label>
@@ -84,7 +84,7 @@ export function DecisionButtons({ moduleId, moduleName, size = "sm" }: { moduleI
               Cancel
             </Button>
             <Button variant="destructive" onClick={() => decide("reject")} disabled={busy !== null || !comment.trim()}>
-              {busy === "reject" && <Loader2 className="size-4 animate-spin" />} Reject module
+              {busy === "reject" && <Loader2 className="size-4 animate-spin" />} Send back
             </Button>
           </DialogFooter>
         </DialogContent>

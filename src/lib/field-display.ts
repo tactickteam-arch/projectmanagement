@@ -7,6 +7,8 @@ export function displayValue(field: FieldDef, v: unknown): string {
   switch (field.type) {
     case "yesno":
       return v === true ? "Yes" : v === false ? "No" : "—";
+    case "task":
+      return v === true ? "Done" : "Not done";
     case "currency":
       return `₹${Number(v).toLocaleString("en-IN")}`;
     case "percent":

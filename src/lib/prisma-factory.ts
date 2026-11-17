@@ -11,7 +11,8 @@ export function createPrismaClient(connectionString = process.env.DATABASE_URL):
 
   const adapter = new PrismaPg({
     connectionString,
-    ssl: { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true },
+    // DATABASE_SSL=disable is only for a local Postgres during development; Supabase always uses verified TLS.
+    ssl: process.env.DATABASE_SSL === "disable" ? false : { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true },
     max: 10,
     // The Supabase pooler closes idle client connections; retire ours first and keep TCP alive,
     // so a request never picks up a connection the server has already dropped.
@@ -21,5 +22,6 @@ export function createPrismaClient(connectionString = process.env.DATABASE_URL):
     // A query on a silently dropped socket errors after 20 s instead of hanging the request.
     query_timeout: 20_000,
   });
-  return new PrismaClient({ adapter });
+  // Interactive transactions make several round-trips to Supabase; the 5 s default is too tight from Vercel.
+  return new PrismaClient({ adapter, transactionOptions: { maxWait: 10_000, timeout: 20_000 } });
 }
