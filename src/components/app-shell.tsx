@@ -1,4 +1,4 @@
-import { Bell, ClipboardCheck, Clock, IndianRupee, LayoutDashboard, ListTodo, Map, Plus, Settings, Store } from "lucide-react";
+import { Bell, ClipboardCheck, Clock, IndianRupee, LayoutDashboard, ListTodo, Map, Plus, Settings, Store, TrafficCone } from "lucide-react";
 import { teamsLabel } from "@/lib/teams";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -20,6 +20,7 @@ function navFor(user: CurrentUser): NavItem[] {
     ...(user.teams.length ? [{ href: "/tasks", label: "My tasks", icon: <ListTodo className="size-4" /> }] : []),
     { href: "/hq", label: "Dashboard", icon: <LayoutDashboard className="size-4" />, exact: true },
     { href: "/hq/approvals", label: "Approvals", icon: <ClipboardCheck className="size-4" /> },
+    { href: "/hq/reports/rag", label: "Weekly RAG", icon: <TrafficCone className="size-4" /> },
     { href: "/hq/reports/delays", label: "Delays report", icon: <Clock className="size-4" /> },
     { href: "/hq/reports/costs", label: "Cost report", icon: <IndianRupee className="size-4" /> },
     { href: "/hq/map", label: "Map view", icon: <Map className="size-4" /> },

@@ -45,7 +45,7 @@ export default async function ApprovalsPage() {
                 <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
                     <Link href={`/stores/${r.store.id}/modules/${r.moduleType}`} className="font-medium hover:underline">
-                      {r.step ? `${r.step} · ` : ""}
+                      {r.code ? `${r.code} · ` : ""}
                       {r.displayName}
                     </Link>
                     {r.approverTeam && <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900 ring-1 ring-amber-200">Approval: {teamLabel(r.approverTeam)}</span>}

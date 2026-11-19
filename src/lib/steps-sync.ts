@@ -1,15 +1,15 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { formatDateOnly } from "@/lib/dates";
-import { planModulesFromHandover } from "@/lib/scheduling";
+import { defaultExpectedKey, planFrom } from "@/lib/scheduling";
 import { computeOverallStatus } from "@/lib/status";
 import { KEY_HANDOVER, MODULE_DEFINITIONS, MODULE_TYPES } from "@/modules";
 import type { FieldDef } from "@/modules/types";
 
 /**
- * Brings module_templates in line with the launch-flow steps in src/modules and gives every store
- * a row for every step. Safe to re-run. HQ's changes made in Settings (schedule offsets, who edits /
- * approves, checklist items) are kept unless `reset` is set (used by the demo seed).
- * Rows of retired module types stay in the database but are no longer shown or counted.
+ * Brings module_templates in line with the SOP steps in src/modules and gives every store a row for
+ * every step. Safe to re-run. HQ's changes made in Settings (schedule offsets, who edits / approves,
+ * checklist items) are kept unless `reset` is set (used by the demo seed). Rows of retired module
+ * types stay in the database but are no longer shown or counted.
  */
 export async function syncSteps(prisma: PrismaClient, opts: { reset?: boolean; log?: (s: string) => void } = {}) {
   const log = opts.log ?? (() => {});
@@ -46,14 +46,15 @@ export async function syncSteps(prisma: PrismaClient, opts: { reset?: boolean; l
   }
 
   const templates = await prisma.moduleTemplate.findMany();
-  const stores = await prisma.store.findMany({ select: { id: true, overallStatus: true, keyHandoverDate: true, actualLaunchDate: true, ownerId: true } });
+  const stores = await prisma.store.findMany({
+    select: { id: true, overallStatus: true, keyHandoverDate: true, expectedKeyDate: true, actualLaunchDate: true, ownerId: true, createdAt: true },
+  });
   for (const s of stores) {
     const added = await prisma.storeModule.createMany({
       data: MODULE_TYPES.map((moduleType) => ({ storeId: s.id, moduleType, updatedById: s.ownerId })),
       skipDuplicates: true,
     });
-    // Keys recorded under the earlier process (a milestone without approval): count the handover
-    // as accepted and copy the date into the step, so the department tracks can start.
+    // Keys recorded under an earlier process: count the handover as accepted and copy the date in.
     if (s.keyHandoverDate) {
       const kh = await prisma.storeModule.findUnique({ where: { storeId_moduleType: { storeId: s.id, moduleType: KEY_HANDOVER } } });
       if (kh && kh.approvalStatus !== "APPROVED") {
@@ -64,15 +65,21 @@ export async function syncSteps(prisma: PrismaClient, opts: { reset?: boolean; l
         });
         log(`store ${s.id}: key handover of ${formatDateOnly(s.keyHandoverDate)} marked accepted`);
       }
-      // Department tracks added after the handover get their planned dates from it.
-      for (const p of planModulesFromHandover(s.keyHandoverDate, templates)) {
-        await prisma.storeModule.updateMany({
-          where: { storeId: s.id, moduleType: p.moduleType, status: "NOT_STARTED", plannedStart: null },
-          data: { plannedStart: p.plannedStart, plannedEnd: p.plannedEnd },
-        });
-      }
     }
-    const modules = await prisma.storeModule.findMany({ where: { storeId: s.id }, select: { moduleType: true, status: true, approvalStatus: true } });
+    // Steps without planned dates get them from their anchor (13-week chart).
+    const created = new Date(Date.UTC(s.createdAt.getUTCFullYear(), s.createdAt.getUTCMonth(), s.createdAt.getUTCDate()));
+    const plans = [
+      ...planFrom("created", created, templates),
+      ...planFrom("expectedKey", s.expectedKeyDate ?? s.keyHandoverDate ?? defaultExpectedKey(created), templates),
+      ...(s.keyHandoverDate ? planFrom("handover", s.keyHandoverDate, templates) : []),
+    ];
+    for (const p of plans) {
+      await prisma.storeModule.updateMany({
+        where: { storeId: s.id, moduleType: p.moduleType, status: "NOT_STARTED", plannedStart: null },
+        data: { plannedStart: p.plannedStart, plannedEnd: p.plannedEnd },
+      });
+    }
+    const modules = await prisma.storeModule.findMany({ where: { storeId: s.id }, select: { moduleType: true, status: true, approvalStatus: true, details: true } });
     const overallStatus = computeOverallStatus(s, modules);
     if (overallStatus !== s.overallStatus) await prisma.store.update({ where: { id: s.id }, data: { overallStatus } });
     if (added.count || overallStatus !== s.overallStatus) log(`store ${s.id}: +${added.count} steps, status ${s.overallStatus ?? "—"} → ${overallStatus ?? "—"}`);

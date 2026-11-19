@@ -169,14 +169,14 @@ export function CreateStoreForm({ owners }: { owners: { id: string; name: string
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="carpet">Carpet area (sq ft)</Label>
+            <Label htmlFor="carpet">Carpet area (sq ft) — store size</Label>
             <Input id="carpet" name="carpetAreaSqft" type="number" min={1} inputMode="numeric" />
             {err("carpetAreaSqft")}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="tl">Target launch date</Label>
             <Input id="tl" name="targetLaunchDate" type="date" />
-            <p className="text-xs text-muted-foreground">Optional — filled from the key handover if left empty.</p>
+            <p className="text-xs text-muted-foreground">Optional — defaults to 13 weeks from today, then Day 0 + 35 days once the keys are received.</p>
           </div>
         </CardContent>
       </Card>

@@ -29,14 +29,14 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" description="Users and teams, who fills in and approves each launch step, store assignment, scheduling and checklists." />
+      <PageHeader title="Settings" description="Users and teams, who fills in and approves each SOP step, store assignment and the 13-week schedule." />
       <Tabs defaultValue="users">
         <TabsList className="flex-wrap">
           <TabsTrigger value="users">Users &amp; teams</TabsTrigger>
           <TabsTrigger value="steps">Steps &amp; approvals</TabsTrigger>
           <TabsTrigger value="assign">Store assignment</TabsTrigger>
           <TabsTrigger value="schedule">Scheduling</TabsTrigger>
-          <TabsTrigger value="checklists">Checklists</TabsTrigger>
+          {checklists.length > 0 && <TabsTrigger value="checklists">Checklists</TabsTrigger>}
         </TabsList>
         <TabsContent value="users" className="mt-4">
           <UsersPanel
@@ -46,7 +46,7 @@ export default async function SettingsPage() {
         </TabsContent>
         <TabsContent value="steps" className="mt-4">
           <StepsPanel
-            steps={templates.map((t) => ({ moduleType: t.moduleType, displayName: t.displayName, step: getModuleDefinition(t.moduleType)?.step ?? 0, editTeams: t.editTeams, approverTeam: t.approverTeam }))}
+            steps={templates.map((t) => ({ moduleType: t.moduleType, displayName: t.displayName, code: getModuleDefinition(t.moduleType)?.code ?? "", editTeams: t.editTeams, approverTeam: t.approverTeam }))}
           />
         </TabsContent>
         <TabsContent value="assign" className="mt-4">
@@ -54,7 +54,7 @@ export default async function SettingsPage() {
         </TabsContent>
         <TabsContent value="schedule" className="mt-4">
           <SchedulingPanel
-            templates={templates.map((t) => ({ moduleType: t.moduleType, displayName: t.displayName, defaultStartOffsetDays: t.defaultStartOffsetDays, defaultDurationDays: t.defaultDurationDays }))}
+            templates={templates.map((t) => ({ moduleType: t.moduleType, displayName: t.displayName, code: getModuleDefinition(t.moduleType)?.code ?? "", anchor: getModuleDefinition(t.moduleType)?.scheduleAnchor ?? "handover", defaultStartOffsetDays: t.defaultStartOffsetDays, defaultDurationDays: t.defaultDurationDays }))}
             targetLaunchOffsetDays={target}
           />
         </TabsContent>

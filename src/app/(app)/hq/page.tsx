@@ -45,8 +45,8 @@ export default async function HqDashboard({ searchParams }: PageProps<"/hq">) {
   exportQs.set("format", "xlsx");
 
   const chartData = [
-    ...OVERALL_STATUS_ORDER.map((s) => ({ label: OVERALL_STATUS_LABELS[s], count: summary.byStatus.find((b) => b.status === s)?.count ?? 0 })),
     { label: "Location filing", count: summary.byStatus.find((b) => b.status === "NONE")?.count ?? 0 },
+    ...OVERALL_STATUS_ORDER.map((s) => ({ label: OVERALL_STATUS_LABELS[s], count: summary.byStatus.find((b) => b.status === s)?.count ?? 0 })),
   ].filter((d) => d.count > 0);
 
   return (

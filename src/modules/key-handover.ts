@@ -1,54 +1,37 @@
+import { eightPointTasks } from "./landlord-check";
 import type { ModuleDefinition } from "./types";
 
-// Flow step 5 "Key received" — done by both Sangeetha and the store owner; RK accepts the handover.
-// On acceptance the handover date becomes Day 0: department tracks are scheduled from it and every
-// department is notified to start step 6. The 8 handover points are placeholders to confirm.
+// SOP stage 5 (slide 6): key handover by Sangeetha + store owner. T-7: teams formally informed,
+// external sign board completed and all materials ordered. 8-point handover audit by State Admin +
+// store owner. RK approves the handover; the handover date (Day 0) starts the setup clock and the
+// system notifies every Stage 6 department.
 export const keyHandover: ModuleDefinition = {
   moduleType: "KEY_HANDOVER",
-  displayName: "Key received",
+  displayName: "Key handover",
   shortLabel: "5 Keys",
-  step: 5,
-  sortOrder: 5,
-  summary: "8-point handover check; depends on landlord civil work being complete",
+  stage: 5,
+  code: "5",
+  group: "gate",
+  sortOrder: 8,
+  summary: "8-point handover audit; sign board & materials done one week before",
   doneBy: "BOTH",
   doneByLabel: "Sangeetha + store owner",
-  editTeams: ["STORE_OWNER", "STATE_ADMIN"],
+  editTeams: ["STATE_ADMIN", "STORE_OWNER"],
   approverTeam: "RK",
-  approvalNote: "Handover accepted",
+  approvalNote: "Handover accepted — starts the setup clock",
   requires: ["TOKEN_ADVANCE"],
-  notes: ["Handover date starts the setup clock"],
-  systemAction: "System notifies every department to start step 6",
-  defaultStartOffsetDays: null,
-  defaultDurationDays: null,
-  minPhotos: 2,
-  photoTag: "photo_handover",
+  notes: ["No key handover without the sign board completed one week before and RK sign-off (zero-exception gate)."],
+  systemAction: "Day 0: the system notifies every Stage 6 department to start",
+  checks: ["preKeyT7"],
+  scheduleAnchor: "expectedKey",
+  defaultStartOffsetDays: -7,
+  defaultDurationDays: 7,
+  minPhotos: 0,
   fields: [
-    { key: "keyHandover", label: "Key handover", type: "task", owner: "State admin" },
-    { key: "handoverDate", label: "Handover date", type: "date", required: true },
-    { key: "receivedBy", label: "Keys received by", type: "text", required: true },
-    { key: "premisesCondition", label: "Condition of premises", type: "select", options: ["Good", "Needs repair"] },
-    { key: "repairNotes", label: "Repair notes", type: "longtext", showWhen: { key: "premisesCondition", equals: "Needs repair" } },
-    {
-      key: "handoverPoints",
-      label: "8-point handover check",
-      type: "checklist",
-      mustTick: "ok",
-      defaultItems: [
-        "All keys received (shutter, doors, panels)",
-        "Landlord civil work complete as agreed",
-        "Flooring, walls and ceiling finished",
-        "Main power supply and meter working",
-        "Water supply and washroom working",
-        "Shutter and locks working",
-        "No leakage or seepage",
-        "Meter readings recorded",
-      ],
-      itemFields: [
-        { key: "itemName", label: "Point", type: "text" },
-        { key: "ok", label: "OK", type: "yesno" },
-        { key: "note", label: "Note", type: "text" },
-      ],
-    },
-    { key: "handoverPhotos", label: "Photos at handover", type: "file", attachmentTag: "photo_handover" },
+    { key: "civilWorkComplete", label: "Landlord civil work 100% complete", type: "task", owner: "State Admin + store owner", section: "8-point handover audit" },
+    ...eightPointTasks("ho_", "State Admin + store owner", "8-point handover audit"),
+    { key: "handoverDate", label: "Key handover date (Day 0)", type: "date", required: true, section: "Handover" },
+    { key: "keysReceivedBy", label: "Keys received by", type: "text", required: true, section: "Handover" },
+    { key: "handoverPhotos", label: "Handover photos (optional)", type: "file", attachmentTag: "photo_handover", section: "Handover" },
   ],
 };

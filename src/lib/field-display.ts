@@ -4,6 +4,7 @@ import { formatDate } from "./format";
 /** Read-only display of a config-driven module field value. */
 export function displayValue(field: FieldDef, v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
+  if (v === "•••• hidden") return "Hidden (KYC)";
   switch (field.type) {
     case "yesno":
       return v === true ? "Yes" : v === false ? "No" : "—";

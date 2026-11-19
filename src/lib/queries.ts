@@ -1,15 +1,18 @@
 import "server-only";
 import type { ModuleStatus, OverallStatus, Prisma } from "@/generated/prisma/client";
-import { storeScope, type AccessSubject } from "@/lib/auth/access";
+import { canViewStore, storeScope, type AccessSubject } from "@/lib/auth/access";
+import { can } from "@/lib/auth/permissions";
 import { daysBetween, formatDateOnly, todayInIndia } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { notFound as nextNotFound } from "next/navigation";
 import { AppError, notFound } from "@/lib/errors";
-import { canViewStore } from "@/lib/auth/access";
-import { missingPrerequisites } from "@/lib/module-rules";
-import { computeProgressPercent, countApproved, daysOverdue, isApproved, isOverdue, TOTAL_STEPS } from "@/lib/status";
-import { getModuleDefinition, MODULE_TYPES, moduleOrder } from "@/modules";
-import type { DoneBy, FieldDef } from "@/modules/types";
+import { stateName } from "@/lib/india-states";
+import { missingBeforeComplete, missingPrerequisites } from "@/lib/module-rules";
+import { ragRows } from "@/lib/rag";
+import { acRequirement, requiredLoadKw } from "@/lib/sop-rules";
+import { computeProgressPercent, countDone, daysOverdue, flowModules, isDone, isOverdue, pendingGates, TOTAL_STEPS } from "@/lib/status";
+import { getModuleDefinition, MODULE_TYPES, moduleOrder, STAGE_COLUMNS } from "@/modules";
+import type { AfterAction, DoneBy, FieldDef, StepGroup, StoreSource } from "@/modules/types";
 
 const num = (d: Prisma.Decimal | null | undefined) => (d === null || d === undefined ? null : Number(d));
 const iso = (d: Date | null | undefined) => (d ? formatDateOnly(d) : null);
@@ -35,12 +38,13 @@ const storeSelect = {
   lng: true,
   overallStatus: true,
   keyHandoverDate: true,
+  expectedKeyDate: true,
   targetLaunchDate: true,
   actualLaunchDate: true,
   ownerId: true,
   owner: { select: { id: true, name: true } },
   modules: {
-    select: { id: true, moduleType: true, status: true, approvalStatus: true, plannedEnd: true, estCost: true, actualCost: true },
+    select: { id: true, moduleType: true, status: true, approvalStatus: true, details: true, plannedEnd: true, estCost: true, actualCost: true },
   },
 } satisfies Prisma.StoreSelect;
 
@@ -51,8 +55,21 @@ export interface GridCell {
   moduleType: string;
   status: ModuleStatus;
   approvalStatus: "PENDING" | "APPROVED" | "REJECTED";
+  done: boolean;
+  /** Approved, waiting for a gating record (e.g. HO payment). */
+  awaitingRecord: boolean;
   overdue: boolean;
   daysOverdue: number;
+}
+
+/** One cell per SOP stage column of the dashboard grid. */
+export interface StageCell {
+  key: string;
+  done: number;
+  total: number;
+  state: "done" | "progress" | "blocked" | "notstarted" | "pending";
+  overdue: number;
+  firstOpen: string | null;
 }
 
 export interface StoreSummary {
@@ -71,6 +88,7 @@ export interface StoreSummary {
   approvedCount: number;
   totalSteps: number;
   keyHandoverDate: string | null;
+  expectedKeyDate: string | null;
   daysSinceHandover: number | null;
   targetLaunchDate: string | null;
   actualLaunchDate: string | null;
@@ -80,10 +98,11 @@ export interface StoreSummary {
   estCost: number;
   actualCost: number;
   cells: GridCell[];
+  stages: StageCell[];
 }
 
 function summarise(s: StoreRow, today: Date): StoreSummary {
-  const flow = s.modules.filter((m) => MODULE_TYPES.includes(m.moduleType));
+  const flow = flowModules(s.modules);
   const cells: GridCell[] = [...flow]
     .sort((a, b) => moduleOrder(a.moduleType) - moduleOrder(b.moduleType))
     .map((m) => ({
@@ -91,10 +110,26 @@ function summarise(s: StoreRow, today: Date): StoreSummary {
       moduleType: m.moduleType,
       status: m.status,
       approvalStatus: m.approvalStatus,
+      done: isDone(m),
+      awaitingRecord: m.status === "COMPLETED" && m.approvalStatus === "APPROVED" && !isDone(m),
       overdue: isOverdue(m.plannedEnd, m.status, today),
       daysOverdue: daysOverdue(m.plannedEnd, m.status, today),
     }));
-  const setup = cells;
+  const stages: StageCell[] = STAGE_COLUMNS.map((c) => {
+    const cs = cells.filter((x) => c.types.includes(x.moduleType));
+    const done = cs.filter((x) => x.done).length;
+    const state: StageCell["state"] =
+      cs.length > 0 && done === cs.length
+        ? "done"
+        : cs.some((x) => x.status === "BLOCKED")
+          ? "blocked"
+          : cs.some((x) => (x.status === "COMPLETED" && !x.done) || x.awaitingRecord)
+            ? "pending"
+            : cs.some((x) => x.status !== "NOT_STARTED")
+              ? "progress"
+              : "notstarted";
+    return { key: c.key, done, total: cs.length, state, overdue: cs.filter((x) => x.overdue).length, firstOpen: cs.find((x) => !x.done)?.moduleType ?? null };
+  });
   const launched = s.actualLaunchDate !== null;
   return {
     id: s.id,
@@ -109,18 +144,20 @@ function summarise(s: StoreRow, today: Date): StoreSummary {
     ownerName: s.owner.name,
     overallStatus: s.overallStatus,
     progressPercent: computeProgressPercent(s.modules),
-    approvedCount: countApproved(s.modules),
+    approvedCount: countDone(s.modules),
     totalSteps: TOTAL_STEPS,
     keyHandoverDate: iso(s.keyHandoverDate),
+    expectedKeyDate: iso(s.expectedKeyDate),
     daysSinceHandover: s.keyHandoverDate && !launched ? daysBetween(s.keyHandoverDate, today) : null,
     targetLaunchDate: iso(s.targetLaunchDate),
     actualLaunchDate: iso(s.actualLaunchDate),
-    overdueCount: setup.filter((c) => c.overdue).length,
-    blockedCount: setup.filter((c) => c.status === "BLOCKED").length,
-    pendingApprovalCount: setup.filter((c) => c.status === "COMPLETED" && c.approvalStatus === "PENDING").length,
+    overdueCount: cells.filter((c) => c.overdue).length,
+    blockedCount: cells.filter((c) => c.status === "BLOCKED").length,
+    pendingApprovalCount: cells.filter((c) => c.status === "COMPLETED" && c.approvalStatus === "PENDING").length,
     estCost: flow.reduce((t, m) => t + (num(m.estCost) ?? 0), 0),
     actualCost: flow.reduce((t, m) => t + (num(m.actualCost) ?? 0), 0),
     cells,
+    stages,
   };
 }
 
@@ -172,7 +209,7 @@ export interface DashboardSummary {
   byStatus: { status: OverallStatus | "NONE"; count: number }[];
 }
 
-/** Summary cards (spec): computed from all stores in the user's scope. */
+/** Summary cards: computed from all stores in the user's scope. */
 export async function dashboardSummary(user: AccessSubject): Promise<DashboardSummary> {
   const all = await listStoreSummaries(user);
   const today = todayInIndia();
@@ -192,7 +229,15 @@ export async function dashboardSummary(user: AccessSubject): Promise<DashboardSu
   };
 }
 
-/** Everything the store detail page needs. Returns 404 if the user cannot see the store. */
+const HIDDEN = "•••• hidden";
+
+function storeValueOf(store: { name: string; storeCode: string; state: string; address: string | null; carpetAreaSqft: number | null }, src: StoreSource): string | number | null {
+  if (src === "state") return stateName(store.state);
+  return store[src];
+}
+
+/** Everything the store detail page needs. Returns 404 if the user cannot see the store. KYC and
+ * bank values are replaced by "hidden" for users who may not see them (can.viewSensitive). */
 export async function getStoreDetail(user: AccessSubject, storeId: string) {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
@@ -218,33 +263,78 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
   });
   const today = todayInIndia();
   const names = Object.fromEntries(templates.map((t) => [t.moduleType, t.displayName]));
+  const detailsOf = (t: string) => (store.modules.find((x) => x.moduleType === t)?.details ?? {}) as Record<string, unknown>;
+  const fieldsOf = (t: string) => (templates.find((x) => x.moduleType === t)?.fieldSchema ?? []) as unknown as FieldDef[];
+
   const modules = templates
     .map((t) => {
       const m = store.modules.find((x) => x.moduleType === t.moduleType);
       const def = getModuleDefinition(t.moduleType);
       if (!m || !def) return null;
+      const fields = t.fieldSchema as unknown as FieldDef[];
+      const seeSensitive = can.viewSensitive(user, store, t);
+      const raw = (m.details ?? {}) as Record<string, unknown>;
+      const details: Record<string, unknown> = { ...raw };
+      for (const f of fields) {
+        if (f.fromStore) details[f.key] = storeValueOf(store, f.fromStore);
+        else if (f.prefillFrom && (details[f.key] === undefined || details[f.key] === null)) {
+          const v = detailsOf(f.prefillFrom.moduleType)[f.prefillFrom.key];
+          if (v !== undefined && v !== null) details[f.key] = v;
+        }
+        if (f.sensitive && !seeSensitive && details[f.key] !== undefined && details[f.key] !== null) details[f.key] = HIDDEN;
+      }
+      const afterActions = (def.afterApproval ?? []).map((a: AfterAction) => ({
+        ...a,
+        record: (raw[a.key] ?? null) as (Record<string, unknown> & { recordedBy?: string; recordedAt?: string }) | null,
+        canRecord: can.recordAfterApproval(user, store, a.teams),
+      }));
+      let review: { title: string; fromType: string; items: { field: FieldDef; value: unknown }[] } | null = null;
+      if (def.reviewFrom) {
+        const src = detailsOf(def.reviewFrom.moduleType);
+        const srcTemplate = templates.find((x) => x.moduleType === def.reviewFrom?.moduleType);
+        const srcSee = srcTemplate ? can.viewSensitive(user, store, srcTemplate) : false;
+        const fieldsSrc = fieldsOf(def.reviewFrom.moduleType);
+        review = {
+          title: def.reviewFrom.title,
+          fromType: def.reviewFrom.moduleType,
+          items: def.reviewFrom.keys
+            .map((k) => fieldsSrc.find((f) => f.key === k))
+            .filter((f): f is FieldDef => f !== undefined)
+            .map((f) => ({ field: f, value: f.sensitive && !srcSee && src[f.key] != null ? HIDDEN : (src[f.key] ?? null) })),
+        };
+      }
       const missing = missingPrerequisites(t.moduleType, store.modules);
+      const beforeComplete = missingBeforeComplete(t.moduleType, store.modules);
       return {
         id: m.id,
         moduleType: m.moduleType,
         displayName: t.displayName,
         shortLabel: def.shortLabel,
-        step: def.step,
+        stage: def.stage,
+        code: def.code,
+        group: def.group as StepGroup,
         summary: def.summary,
         doneBy: def.doneBy as DoneBy,
         doneByLabel: def.doneByLabel,
         notes: def.notes ?? [],
         systemAction: def.systemAction ?? null,
-        afterApproval: def.afterApproval ?? null,
+        afterActions,
+        pendingGates: pendingGates(m),
+        review,
+        checks: def.checks ?? [],
+        requireActualEnd: def.requireActualEnd ?? false,
         editTeams: t.editTeams,
+        supportTeams: def.supportTeams ?? [],
         approverTeam: t.approverTeam,
         approvalNote: def.approvalNote,
         requires: def.requires.map((r) => names[r] ?? r),
+        completeAfter: (def.completeAfter ?? []).map((r) => ({ moduleType: r, name: names[r] ?? r, done: !beforeComplete.includes(r) })),
         waitingFor: missing.map((r) => names[r] ?? r),
-        done: isApproved(m),
+        done: isDone(m),
+        canSeeSensitive: seeSensitive,
         minPhotos: t.minPhotos,
         photoTag: t.photoTag,
-        fields: t.fieldSchema as unknown as FieldDef[],
+        fields,
         status: m.status,
         approvalStatus: m.approvalStatus,
         approvalComment: m.approvalComment,
@@ -261,7 +351,7 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
         estCost: num(m.estCost),
         actualCost: num(m.actualCost),
         remarks: m.remarks,
-        details: (m.details ?? {}) as Record<string, unknown>,
+        details,
         updatedBy: m.updatedBy?.name ?? null,
         updatedAt: m.updatedAt.toISOString(),
         overdue: isOverdue(m.plannedEnd, m.status, today),
@@ -272,6 +362,7 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
     })
     .filter((m): m is NonNullable<typeof m> => m !== null);
 
+  const area = store.carpetAreaSqft;
   return {
     id: store.id,
     storeCode: store.storeCode,
@@ -284,17 +375,21 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
     lat: num(store.lat),
     lng: num(store.lng),
     storeType: store.storeType,
-    carpetAreaSqft: store.carpetAreaSqft,
+    carpetAreaSqft: area,
+    /** SOP slide 4 / 8 requirements for this store's size. */
+    requirements: area ? { loadKw: requiredLoadKw(area), ac: acRequirement(area) } : null,
     floor: store.floor,
     owner: store.owner,
     ownerId: store.ownerId,
     targetLaunchDate: iso(store.targetLaunchDate),
+    expectedKeyDate: iso(store.expectedKeyDate),
     keyHandoverDate: iso(store.keyHandoverDate),
     actualLaunchDate: iso(store.actualLaunchDate),
     daysSinceHandover: store.keyHandoverDate && !store.actualLaunchDate ? daysBetween(store.keyHandoverDate, today) : null,
+    daysToExpectedKeys: store.expectedKeyDate && !store.keyHandoverDate ? daysBetween(today, store.expectedKeyDate) : null,
     overallStatus: store.overallStatus,
     progressPercent: computeProgressPercent(store.modules),
-    approvedCount: countApproved(store.modules),
+    approvedCount: countDone(store.modules),
     totalSteps: TOTAL_STEPS,
     createdAt: store.createdAt.toISOString(),
     modules,
@@ -316,7 +411,7 @@ export type StoreDetail = Awaited<ReturnType<typeof getStoreDetail>>;
 export type ModuleView = StoreDetail["modules"][number];
 
 /** Approvals queue: Completed steps waiting for approval, oldest first. SuperAdmin sees every step;
- * other users see the steps their teams approve (Boss + CEO, RK, Accounts, …). */
+ * other users see the steps their teams approve (Boss + CEO, RK, Accounts). */
 export async function approvalsQueue(user: AccessSubject) {
   const templates = await prisma.moduleTemplate.findMany({ select: { moduleType: true, displayName: true, approverTeam: true } });
   const approvable = templates
@@ -343,7 +438,7 @@ export async function approvalsQueue(user: AccessSubject) {
       id: r.id,
       moduleType: r.moduleType,
       displayName: t?.displayName ?? r.moduleType,
-      step: getModuleDefinition(r.moduleType)?.step ?? null,
+      code: getModuleDefinition(r.moduleType)?.code ?? "",
       approverTeam: t?.approverTeam ?? null,
       submittedAt: (r.completedAt ?? r.updatedAt).toISOString(),
       submittedBy: r.updatedBy?.name ?? null,
@@ -354,15 +449,20 @@ export async function approvalsQueue(user: AccessSubject) {
   });
 }
 
-/** "My tasks": open steps that the user's teams fill in, across the stores they can see.
- * A step is open until done; it is "ready" once its earlier steps are done. */
+/** "My tasks": open steps that the user's teams fill in, plus records their teams must make after
+ * an approval (HO pays the token advance, Accounts records the APX PO), across the stores they see.
+ * A step is "ready" once its earlier steps are done. */
 export async function myTasks(user: AccessSubject) {
   const templates = await prisma.moduleTemplate.findMany({ orderBy: { sortOrder: "asc" } });
-  const mine = templates.filter((t) => MODULE_TYPES.includes(t.moduleType) && t.editTeams.some((x) => (user.teams ?? []).includes(x))).map((t) => t.moduleType);
-  if (mine.length === 0) return { teamsWithSteps: [] as string[], items: [] };
+  const teams = user.teams ?? [];
+  const mine = templates.filter((t) => MODULE_TYPES.includes(t.moduleType) && t.editTeams.some((x) => teams.includes(x))).map((t) => t.moduleType);
+  const recordTypes = templates
+    .filter((t) => getModuleDefinition(t.moduleType)?.afterApproval?.some((a) => a.teams.some((x) => teams.includes(x))))
+    .map((t) => t.moduleType);
+  if (mine.length === 0 && recordTypes.length === 0) return { teamsWithSteps: [] as string[], items: [], records: [] };
   const today = todayInIndia();
   const stores = await prisma.store.findMany({
-    where: { AND: [storeScope(user), { overallStatus: { notIn: ["LAUNCHED", "DROPPED"] } }] },
+    where: { AND: [storeScope(user), { OR: [{ overallStatus: null }, { overallStatus: { notIn: ["LAUNCHED", "DROPPED"] } }] }] },
     select: {
       id: true,
       storeCode: true,
@@ -370,14 +470,15 @@ export async function myTasks(user: AccessSubject) {
       city: true,
       state: true,
       overallStatus: true,
-      modules: { select: { id: true, moduleType: true, status: true, approvalStatus: true, plannedStart: true, plannedEnd: true, approvalComment: true, blockerReason: true } },
+      modules: { select: { id: true, moduleType: true, status: true, approvalStatus: true, details: true, plannedStart: true, plannedEnd: true, approvalComment: true, blockerReason: true } },
     },
     orderBy: { storeCode: "asc" },
   });
   const names = Object.fromEntries(templates.map((t) => [t.moduleType, t.displayName]));
+  const storeOf = (s: (typeof stores)[number]) => ({ id: s.id, storeCode: s.storeCode, name: s.name, city: s.city, state: s.state, overallStatus: s.overallStatus });
   const items = stores.flatMap((s) =>
     s.modules
-      .filter((m) => mine.includes(m.moduleType) && !isApproved(m))
+      .filter((m) => mine.includes(m.moduleType) && !(m.status === "COMPLETED" && m.approvalStatus === "APPROVED"))
       .map((m) => {
         const waitingFor = missingPrerequisites(m.moduleType, s.modules).map((r) => names[r] ?? r);
         const t = templates.find((x) => x.moduleType === m.moduleType);
@@ -385,7 +486,8 @@ export async function myTasks(user: AccessSubject) {
           id: m.id,
           moduleType: m.moduleType,
           displayName: names[m.moduleType] ?? m.moduleType,
-          step: getModuleDefinition(m.moduleType)?.step ?? null,
+          code: getModuleDefinition(m.moduleType)?.code ?? "",
+          sortOrder: moduleOrder(m.moduleType),
           status: m.status,
           approvalStatus: m.approvalStatus,
           approverTeam: t?.approverTeam ?? null,
@@ -396,53 +498,75 @@ export async function myTasks(user: AccessSubject) {
           overdue: isOverdue(m.plannedEnd, m.status, today),
           daysOverdue: daysOverdue(m.plannedEnd, m.status, today),
           waitingFor,
-          store: { id: s.id, storeCode: s.storeCode, name: s.name, city: s.city, state: s.state, overallStatus: s.overallStatus },
+          store: storeOf(s),
         };
       }),
   );
-  items.sort((a, b) => b.daysOverdue - a.daysOverdue || (a.plannedEnd ?? "9999").localeCompare(b.plannedEnd ?? "9999") || (a.step ?? 0) - (b.step ?? 0));
-  return { teamsWithSteps: [...new Set(templates.filter((t) => mine.includes(t.moduleType)).flatMap((t) => t.editTeams).filter((x) => (user.teams ?? []).includes(x)))], items };
+  items.sort((a, b) => b.daysOverdue - a.daysOverdue || (a.plannedEnd ?? "9999").localeCompare(b.plannedEnd ?? "9999") || a.sortOrder - b.sortOrder);
+  const records = stores.flatMap((s) =>
+    s.modules
+      .filter((m) => recordTypes.includes(m.moduleType) && m.status === "COMPLETED" && m.approvalStatus === "APPROVED")
+      .flatMap((m) => {
+        const details = (m.details ?? {}) as Record<string, unknown>;
+        return (getModuleDefinition(m.moduleType)?.afterApproval ?? [])
+          .filter((a) => a.teams.some((x) => teams.includes(x)) && !details[a.key])
+          .map((a) => ({ id: `${m.id}:${a.key}`, moduleId: m.id, moduleType: m.moduleType, displayName: names[m.moduleType] ?? m.moduleType, label: a.label, pendingText: a.pendingText, gate: a.gate ?? false, store: storeOf(s) }));
+      }),
+  );
+  return {
+    teamsWithSteps: [...new Set(templates.filter((t) => mine.includes(t.moduleType)).flatMap((t) => t.editTeams).filter((x) => teams.includes(x)))],
+    items,
+    records,
+  };
 }
 
-/** Delays report: overdue steps sorted by days overdue (spec). */
+/** Delays report: overdue steps sorted by days overdue. Steps still waiting on an earlier step are
+ * marked so (the delay sits with the earlier step). */
 export async function delaysReport(user: AccessSubject) {
   const today = todayInIndia();
-  const rows = await prisma.storeModule.findMany({
-    where: {
-      moduleType: { in: [...MODULE_TYPES] },
-      status: { not: "COMPLETED" },
-      plannedEnd: { lt: today },
-      store: { AND: [storeScope(user), { overallStatus: { notIn: ["LAUNCHED", "DROPPED"] } }] },
-    },
+  const stores = await prisma.store.findMany({
+    where: { AND: [storeScope(user), { OR: [{ overallStatus: null }, { overallStatus: { notIn: ["LAUNCHED", "DROPPED"] } }] }], modules: { some: { status: { not: "COMPLETED" }, plannedEnd: { lt: today } } } },
     select: {
       id: true,
-      moduleType: true,
-      status: true,
-      plannedStart: true,
-      plannedEnd: true,
-      blockerReason: true,
-      vendorName: true,
-      store: { select: { id: true, storeCode: true, name: true, city: true, state: true, owner: { select: { name: true } } } },
+      storeCode: true,
+      name: true,
+      city: true,
+      state: true,
+      owner: { select: { name: true } },
+      modules: { select: { id: true, moduleType: true, status: true, approvalStatus: true, details: true, plannedStart: true, plannedEnd: true, blockerReason: true, vendorName: true } },
     },
   });
-  const names = await templateNames();
-  return rows
-    .map((r) => ({
-      id: r.id,
-      moduleType: r.moduleType,
-      displayName: names[r.moduleType] ?? r.moduleType,
-      status: r.status,
-      plannedStart: iso(r.plannedStart),
-      plannedEnd: iso(r.plannedEnd),
-      daysOverdue: daysOverdue(r.plannedEnd, r.status, today),
-      blockerReason: r.blockerReason,
-      vendorName: r.vendorName,
-      store: { id: r.store.id, storeCode: r.store.storeCode, name: r.store.name, city: r.store.city, state: r.store.state, ownerName: r.store.owner.name },
-    }))
+  const templates = await prisma.moduleTemplate.findMany({ select: { moduleType: true, displayName: true, editTeams: true } });
+  const names = Object.fromEntries(templates.map((t) => [t.moduleType, t.displayName]));
+  return stores
+    .flatMap((s) =>
+      s.modules
+        .filter((m) => MODULE_TYPES.includes(m.moduleType) && isOverdue(m.plannedEnd, m.status, today))
+        .map((m) => ({
+          id: m.id,
+          moduleType: m.moduleType,
+          displayName: names[m.moduleType] ?? m.moduleType,
+          code: getModuleDefinition(m.moduleType)?.code ?? "",
+          ownerTeams: templates.find((t) => t.moduleType === m.moduleType)?.editTeams ?? [],
+          status: m.status,
+          plannedStart: iso(m.plannedStart),
+          plannedEnd: iso(m.plannedEnd),
+          daysOverdue: daysOverdue(m.plannedEnd, m.status, today),
+          waitingFor: missingPrerequisites(m.moduleType, s.modules).map((r) => names[r] ?? r),
+          blockerReason: m.blockerReason,
+          vendorName: m.vendorName,
+          store: { id: s.id, storeCode: s.storeCode, name: s.name, city: s.city, state: s.state, ownerName: s.owner.name },
+        })),
+    )
     .sort((a, b) => b.daysOverdue - a.daysOverdue);
 }
 
-/** Cost report: estimated vs actual per store and per module (spec). */
+/** Weekly RAG rollout tracker (SOP slide 11) for the stores the user can see. */
+export async function ragReport(user: AccessSubject) {
+  return ragRows(storeScope(user));
+}
+
+/** Cost report: estimated vs actual per store and per step. */
 export async function costReport(user: AccessSubject) {
   const rows = await prisma.storeModule.findMany({
     where: { store: storeScope(user), moduleType: { in: [...MODULE_TYPES] } },

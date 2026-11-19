@@ -40,6 +40,8 @@ export function Uploader({
   canEdit,
   photosOnly,
   hint,
+  required,
+  error,
 }: {
   moduleId: string;
   tag: string;
@@ -48,6 +50,8 @@ export function Uploader({
   canEdit: boolean;
   photosOnly?: boolean;
   hint?: string;
+  required?: boolean;
+  error?: string;
 }) {
   const router = useRouter();
   const camRef = useRef<HTMLInputElement>(null);
@@ -99,7 +103,8 @@ export function Uploader({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">
-          {label} <span className="font-normal text-muted-foreground">({files.length})</span>
+          {label}
+          {required && <span className="text-destructive"> *</span>} <span className="font-normal text-muted-foreground">({files.length})</span>
         </p>
         {canEdit && (
           <div className="flex gap-2">
@@ -115,6 +120,7 @@ export function Uploader({
         )}
       </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {error && files.length === 0 && <p className="text-xs text-destructive">{error}</p>}
       {files.length > 0 ? (
         <ul className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           {files.map((f) => (

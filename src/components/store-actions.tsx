@@ -66,7 +66,6 @@ export function EditStoreDialog({ store }: { store: EditableStore }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [storeType, setStoreType] = useState(store.storeType ?? "");
   const [floor, setFloor] = useState(store.floor ?? "");
-  const canLaunch = store.overallStatus === "READY_FOR_LAUNCH" || store.actualLaunchDate !== null;
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -82,7 +81,6 @@ export function EditStoreDialog({ store }: { store: EditableStore }) {
       carpetAreaSqft: s("carpetAreaSqft") ? Number(s("carpetAreaSqft")) : null,
       targetLaunchDate: s("targetLaunchDate"),
     };
-    if (canLaunch) body.actualLaunchDate = s("actualLaunchDate");
     setBusy(true);
     setErrors({});
     try {
@@ -153,14 +151,9 @@ export function EditStoreDialog({ store }: { store: EditableStore }) {
           <Field label="Target launch date" error={errors.targetLaunchDate}>
             <Input name="targetLaunchDate" type="date" defaultValue={store.targetLaunchDate ?? ""} />
           </Field>
-          <Field
-            label="Actual launch date"
-            error={errors.actualLaunchDate}
-            hint={canLaunch ? "Entering this marks the store Launched." : "Available once the store is Ready for Launch."}
-            className="sm:col-span-2"
-          >
-            <Input name="actualLaunchDate" type="date" defaultValue={store.actualLaunchDate ?? ""} disabled={!canLaunch} />
-          </Field>
+          <p className="text-xs text-muted-foreground sm:col-span-2">
+            Carpet area drives the SOP power-load and AC checks. The soft launch date is recorded by the 7 · Soft launch step.
+          </p>
           {errors._ && <p className="text-sm text-destructive sm:col-span-2">{errors._}</p>}
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>

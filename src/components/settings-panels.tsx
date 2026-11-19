@@ -406,11 +406,13 @@ export function AssignmentPanel({ stores, owners }: { stores: { id: string; stor
   );
 }
 
+const ANCHOR_LABEL = { created: "Store created (week 1)", expectedKey: "Expected keys (T-)", handover: "Key handover (Day 0)" } as const;
+
 export function SchedulingPanel({
   templates,
   targetLaunchOffsetDays,
 }: {
-  templates: { moduleType: string; displayName: string; defaultStartOffsetDays: number | null; defaultDurationDays: number | null }[];
+  templates: { moduleType: string; displayName: string; code: string; anchor: "created" | "expectedKey" | "handover"; defaultStartOffsetDays: number | null; defaultDurationDays: number | null }[];
   targetLaunchOffsetDays: number;
 }) {
   const router = useRouter();
@@ -429,7 +431,7 @@ export function SchedulingPanel({
         });
       }
       await api("/api/admin/module-templates", { method: "PATCH", body: { targetLaunchOffsetDays: Number(target) } });
-      toast.success("Scheduling defaults saved. They apply to key handovers recorded from now on.");
+      toast.success("Schedule saved. It applies to stores and key handovers from now on.");
       router.refresh();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Could not save");
@@ -440,12 +442,13 @@ export function SchedulingPanel({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Step 6 department tracks: days after the key handover is accepted (Day 0). Values are placeholders to confirm with Sangeetha.</p>
+      <p className="text-sm text-muted-foreground">Defaults follow the 13-week chart (SOP slide 10). Each step is planned from its anchor: the day the store is created (week 1), the expected key date from MOU point 11 (negative = days before the keys), or the accepted key handover (Day 0).</p>
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full min-w-[480px] text-sm">
           <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
-              <th className="px-4 py-2.5 font-medium">Department track</th>
+              <th className="px-4 py-2.5 font-medium">Step</th>
+              <th className="px-4 py-2.5 font-medium">Counted from</th>
               <th className="px-4 py-2.5 font-medium">Planned start (day)</th>
               <th className="px-4 py-2.5 font-medium">Duration (days)</th>
             </tr>
@@ -453,17 +456,22 @@ export function SchedulingPanel({
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.moduleType} className="border-b">
-                <td className="px-4 py-2">{r.displayName}</td>
                 <td className="px-4 py-2">
-                  <Input type="number" min={0} className="w-24" value={r.defaultStartOffsetDays ?? 0} aria-label={`${r.displayName} start offset`} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, defaultStartOffsetDays: Number(e.target.value) } : x)))} />
+                  <span className="mr-1.5 font-mono text-xs text-muted-foreground">{r.code}</span>
+                  {r.displayName}
+                </td>
+                <td className="px-4 py-2 text-xs text-muted-foreground">{ANCHOR_LABEL[r.anchor]}</td>
+                <td className="px-4 py-2">
+                  <Input type="number" min={-365} max={365} className="w-24" value={r.defaultStartOffsetDays ?? 0} aria-label={`${r.displayName} start offset`} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, defaultStartOffsetDays: Number(e.target.value) } : x)))} />
                 </td>
                 <td className="px-4 py-2">
-                  <Input type="number" min={1} className="w-24" value={r.defaultDurationDays ?? 1} aria-label={`${r.displayName} duration`} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, defaultDurationDays: Number(e.target.value) } : x)))} />
+                  <Input type="number" min={0} className="w-24" value={r.defaultDurationDays ?? 0} aria-label={`${r.displayName} duration`} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, defaultDurationDays: Number(e.target.value) } : x)))} />
                 </td>
               </tr>
             ))}
             <tr>
               <td className="px-4 py-2 font-medium">Target soft launch</td>
+              <td className="px-4 py-2 text-xs text-muted-foreground">{ANCHOR_LABEL.handover}</td>
               <td className="px-4 py-2">
                 <Input type="number" min={1} className="w-24" value={target} onChange={(e) => setTarget(Number(e.target.value))} aria-label="Target launch offset" />
               </td>
@@ -482,7 +490,7 @@ export function SchedulingPanel({
 export interface StepRow {
   moduleType: string;
   displayName: string;
-  step: number;
+  code: string;
   editTeams: string[];
   approverTeam: string | null;
 }
@@ -514,7 +522,7 @@ export function StepsPanel({ steps }: { steps: StepRow[] }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Defaults follow the launch flow. “Store owner” means the store&apos;s assigned owner. A step without an approver turns green as soon as its team marks it done. HQ (SuperAdmin) can always fill in and approve any step.
+        Defaults follow the SOP (slides 2–9). “Store owner” means the store&apos;s assigned owner. A step without an approver turns green as soon as its team marks it done. HQ (SuperAdmin) can always fill in and approve any step.
       </p>
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full min-w-[820px] text-sm">
@@ -529,7 +537,8 @@ export function StepsPanel({ steps }: { steps: StepRow[] }) {
             {rows.map((r, i) => (
               <tr key={r.moduleType} className="border-b align-top last:border-0">
                 <td className="px-4 py-3 font-medium whitespace-nowrap">
-                  {r.step} · {r.displayName}
+                  <span className="mr-1.5 font-mono text-xs text-muted-foreground">{r.code}</span>
+                  {r.displayName}
                 </td>
                 <td className="px-4 py-3">
                   <TeamPicker value={r.editTeams} onChange={(v) => set(i, { editTeams: v })} includeOwner />

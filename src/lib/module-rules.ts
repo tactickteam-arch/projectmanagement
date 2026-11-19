@@ -1,20 +1,32 @@
 import { z } from "zod";
 import type { ApprovalStatus, ModuleStatus } from "@/generated/prisma/enums";
-import { getModuleDefinition } from "@/modules";
-import type { FieldDef } from "@/modules/types";
+import { acProblems, maskAadhaar, powerLoadProblems, preKeyProblems } from "@/lib/sop-rules";
+import { isDone, type ModuleState } from "@/lib/status";
+import { getModuleDefinition, MATERIAL_ORDERING, SIGN_BOARD } from "@/modules";
+import type { FieldDef, SopCheck } from "@/modules/types";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** Blank text is saved as "not filled in". */
+const blankToNull = (v: unknown) => (typeof v === "string" && v.trim() === "" ? null : v);
 
 /** Builds a validator for store_modules.details from a template's field_schema. Every field may be
  * left empty while a step is in progress; `required` fields and tasks are checked on completion
- * (see completionErrors). */
+ * (see completionErrors). Store-sourced and file fields are not part of the details. */
 export function detailsSchema(fields: FieldDef[]): z.ZodType<Record<string, unknown>> {
   const shape: Record<string, z.ZodType> = {};
   for (const f of fields) {
+    if (f.fromStore) continue;
     const s = fieldSchema(f);
-    if (s) shape[f.key] = s.nullable().optional();
+    if (s) shape[f.key] = z.preprocess(blankToNull, s.nullable().optional());
   }
   return z.object(shape).strip() as unknown as z.ZodType<Record<string, unknown>>;
+}
+
+/** Validator for the values of an after-approval record (e.g. HO's payment). */
+export function afterActionSchema(fields: FieldDef[]): z.ZodType<Record<string, unknown>> {
+  return detailsSchema(fields);
 }
 
 function numberSchema(f: FieldDef) {
@@ -24,11 +36,29 @@ function numberSchema(f: FieldDef) {
   return n;
 }
 
-function fieldSchema(f: FieldDef): z.ZodType | null {
+export function fieldSchema(f: FieldDef): z.ZodType | null {
   switch (f.type) {
     case "text":
-    case "phone":
-      return z.string().trim().max(200, `${f.label} is too long`);
+    case "phone": {
+      const base = z.string().trim().max(200, `${f.label} is too long`);
+      if (!f.pattern) return base;
+      const re = new RegExp(f.pattern.regex);
+      const msg = f.pattern.message;
+      return f.type === "text"
+        ? base.transform((v) => v.toUpperCase().replace(/\s+/g, "")).refine((v) => re.test(v), msg)
+        : base.refine((v) => re.test(v), msg);
+    }
+    case "email":
+      return z.string().trim().max(200).refine((v) => EMAIL_RE.test(v), `${f.label}: enter a valid email address`);
+    case "aadhaar":
+      return z
+        .string()
+        .trim()
+        .transform((v, ctx) => {
+          const masked = maskAadhaar(v);
+          if (!masked) ctx.addIssue({ code: "custom", message: "Aadhaar number must be 12 digits" });
+          return masked ?? "";
+        });
     case "longtext":
       return z.string().trim().max(4000, `${f.label} is too long`);
     case "number":
@@ -59,6 +89,53 @@ function fieldSchema(f: FieldDef): z.ZodType | null {
   }
 }
 
+type Sibling = Pick<ModuleState, "moduleType" | "status" | "approvalStatus" | "details">;
+
+/** Steps that must be done before `moduleType` may start, and are not done yet. */
+export function missingPrerequisites(moduleType: string, modules: readonly Sibling[]): string[] {
+  return notDone(getModuleDefinition(moduleType)?.requires ?? [], modules);
+}
+
+/** Steps that must be done before `moduleType` can be marked Completed (e.g. the Interiors track
+ * covers the on-site steps), and are not done yet. */
+export function missingBeforeComplete(moduleType: string, modules: readonly Sibling[]): string[] {
+  return notDone(getModuleDefinition(moduleType)?.completeAfter ?? [], modules);
+}
+
+function notDone(types: readonly string[], modules: readonly Sibling[]): string[] {
+  return types.filter((t) => {
+    const m = modules.find((x) => x.moduleType === t);
+    return !m || !isDone(m);
+  });
+}
+
+export interface SopContext {
+  areaSqft: number | null;
+  details: Record<string, unknown>;
+  siblings: readonly (Sibling & { actualEnd: Date | null })[];
+}
+
+/** Automatic SOP checks (slides 4, 6, 8) as messages; empty = all clear. */
+export function sopCheckErrors(checks: readonly SopCheck[] | undefined, ctx: SopContext): string[] {
+  const out: string[] = [];
+  for (const c of checks ?? []) {
+    if (c === "powerLoad") {
+      const kw = ctx.details.powerCapacityKw ?? ctx.details.sanctionedLoadKw;
+      out.push(...powerLoadProblems(ctx.areaSqft, ctx.details.powerSupply, kw));
+    } else if (c === "acSizing") {
+      out.push(...acProblems(ctx.areaSqft, ctx.details.acType, ctx.details.acTonnage));
+    } else if (c === "preKeyT7") {
+      const state = (t: string) => {
+        const m = ctx.siblings.find((s) => s.moduleType === t);
+        return { done: !!m && isDone(m), completedOn: m?.actualEnd ? m.actualEnd.toISOString().slice(0, 10) : null };
+      };
+      const handover = typeof ctx.details.handoverDate === "string" ? ctx.details.handoverDate : null;
+      out.push(...preKeyProblems(handover, state(SIGN_BOARD), state(MATERIAL_ORDERING)));
+    }
+  }
+  return out;
+}
+
 export interface ModuleRuleInput {
   moduleType: string;
   current: { status: ModuleStatus; approvalStatus: ApprovalStatus };
@@ -72,27 +149,21 @@ export interface ModuleRuleInput {
   };
   /** Display names of earlier steps that are not done yet (see missingPrerequisites). */
   missingPrerequisites: string[];
+  /** Display names of steps that must be done before this one is Completed. */
+  missingBeforeComplete?: string[];
   photoCount: number;
   minPhotos: number;
   /** Field definitions and the details as they will be saved — checked when marking Completed. */
   fields?: FieldDef[];
   details?: Record<string, unknown>;
+  /** Attachment tags uploaded to the step (required file fields). */
+  uploadedTags?: string[];
+  /** Messages from sopCheckErrors, checked when marking Completed. */
+  sopProblems?: string[];
+  requireActualEnd?: boolean;
 }
 
-/** Steps that must be done before `moduleType` may start, and are not done yet. */
-export function missingPrerequisites(
-  moduleType: string,
-  modules: readonly { moduleType: string; status: ModuleStatus; approvalStatus: ApprovalStatus }[],
-): string[] {
-  const def = getModuleDefinition(moduleType);
-  if (!def) return [];
-  return def.requires.filter((t) => {
-    const m = modules.find((x) => x.moduleType === t);
-    return !m || m.status !== "COMPLETED" || m.approvalStatus !== "APPROVED";
-  });
-}
-
-/** Spec "Validation rules" plus the flow's order of steps. Returns field → message for every rule broken. */
+/** Validation rules plus the SOP's order of steps. Returns field → message for every rule broken. */
 export function checkModuleRules(i: ModuleRuleInput): Record<string, string> {
   const errors: Record<string, string> = {};
   if (i.current.status === "COMPLETED" && i.current.approvalStatus === "APPROVED") {
@@ -106,10 +177,14 @@ export function checkModuleRules(i: ModuleRuleInput): Record<string, string> {
     errors.blockerReason = "Give a reason when the step is Blocked.";
   }
   if (i.next.status === "COMPLETED") {
+    const before = i.missingBeforeComplete ?? [];
+    if (before.length && !errors.status) errors.status = `This step can be completed once ${joinNames(before)} ${before.length > 1 ? "are" : "is"} done.`;
     if (i.photoCount < i.minPhotos) {
       errors.photos = `Upload at least ${i.minPhotos} photo${i.minPhotos > 1 ? "s" : ""} before marking this step Completed (${i.photoCount} so far).`;
     }
-    Object.assign(errors, completionErrors(i.fields ?? [], i.details ?? {}));
+    if (i.requireActualEnd && !i.next.actualEnd) errors.actualEnd = "Enter the actual end date (the date the work was finished).";
+    Object.assign(errors, completionErrors(i.fields ?? [], i.details ?? {}, i.uploadedTags ?? []));
+    if (i.sopProblems?.length) errors.sop = i.sopProblems.join(" ");
   }
   if (i.next.actualStart && i.next.actualEnd && i.next.actualEnd < i.next.actualStart) {
     errors.actualEnd = "Actual end date cannot be before the actual start date.";
@@ -122,26 +197,42 @@ export function checkModuleRules(i: ModuleRuleInput): Record<string, string> {
 
 const isEmpty = (v: unknown) => v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0);
 
-/** Before a step is Completed: every point (task) ticked, required fields filled, checklists cleared. */
-export function completionErrors(fields: FieldDef[], details: Record<string, unknown>): Record<string, string> {
+export const isVisible = (f: FieldDef, details: Record<string, unknown>) => !f.showWhen || details[f.showWhen.key] === f.showWhen.equals;
+
+/** Before a step is Completed: every point (task) ticked, required fields filled and files
+ * uploaded, checklists cleared. */
+export function completionErrors(fields: FieldDef[], details: Record<string, unknown>, uploadedTags: readonly string[] = []): Record<string, string> {
   const errors: Record<string, string> = {};
-  const visible = (f: FieldDef) => !f.showWhen || details[f.showWhen.key] === f.showWhen.equals;
   const openTasks = fields.filter((f) => f.type === "task" && details[f.key] !== true);
   if (openTasks.length) {
     errors.tasks = `Tick every point before marking this step Completed (open: ${openTasks.map((t) => t.label).join("; ")}).`;
     for (const t of openTasks) errors[`details.${t.key}`] = "Not done yet";
   }
+  const missing: string[] = [];
   for (const f of fields) {
-    if (f.required && visible(f) && f.type !== "file" && isEmpty(details[f.key])) errors[`details.${f.key}`] = `${f.label} is required`;
-    if (f.type === "checklist" && f.mustTick) {
-      const rows = Array.isArray(details[f.key]) ? (details[f.key] as Record<string, unknown>[]) : [];
-      const tickLabel = f.itemFields?.find((x) => x.key === f.mustTick)?.label ?? f.mustTick;
-      if (rows.length === 0) errors[`details.${f.key}`] = `Fill in the ${f.label}.`;
-      else if (rows.some((r) => r[f.mustTick as string] !== true)) {
-        const open = rows.filter((r) => r[f.mustTick as string] !== true).length;
-        errors[`details.${f.key}`] = `${open} item${open === 1 ? "" : "s"} of the ${f.label} not marked “${tickLabel}”.`;
+    if (!f.required || !isVisible(f, details)) continue;
+    if (f.type === "file") {
+      if (!uploadedTags.includes(f.attachmentTag ?? "document")) {
+        errors[`file.${f.attachmentTag ?? "document"}`] = `Upload the ${f.label.toLowerCase()}`;
+        missing.push(f.label);
       }
+    } else if (isEmpty(details[f.key])) {
+      errors[`details.${f.key}`] = f.fromStore ? `${f.label} is missing — add it under Store info` : `${f.label} is required`;
+      missing.push(f.sr ? `${f.sr}. ${f.label}` : f.label);
     }
+  }
+  for (const f of fields) {
+    if (f.type !== "checklist" || !f.mustTick) continue;
+    const rows = Array.isArray(details[f.key]) ? (details[f.key] as Record<string, unknown>[]) : [];
+    const tickLabel = f.itemFields?.find((x) => x.key === f.mustTick)?.label ?? f.mustTick;
+    if (rows.length === 0) errors[`details.${f.key}`] = `Fill in the ${f.label}.`;
+    else if (rows.some((r) => r[f.mustTick as string] !== true)) {
+      const open = rows.filter((r) => r[f.mustTick as string] !== true).length;
+      errors[`details.${f.key}`] = `${open} item${open === 1 ? "" : "s"} of the ${f.label} not marked “${tickLabel}”.`;
+    }
+  }
+  if (missing.length) {
+    errors.required = `Fill in every mandatory point before marking this step Completed — ${missing.length} missing: ${missing.slice(0, 8).join("; ")}${missing.length > 8 ? "; …" : ""}.`;
   }
   return errors;
 }
@@ -152,7 +243,7 @@ function joinNames(names: string[]): string {
 
 /**
  * Approval state after a save. Marking Completed asks the approver team to review; a step without
- * an approver (Legal, department tracks) is done as soon as its team marks it Completed.
+ * an approver (legal, on-site work, department tracks) is done as soon as its team marks it Completed.
  */
 export function approvalAfterSave(
   current: { status: ModuleStatus; approvalStatus: ApprovalStatus },

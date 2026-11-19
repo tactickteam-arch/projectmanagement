@@ -1,4 +1,4 @@
-import { STORE_OWNER_TEAM } from "@/lib/teams";
+import { SENSITIVE_VIEW_TEAMS, STORE_OWNER_TEAM } from "@/lib/teams";
 import { canViewStore, type AccessSubject } from "./access";
 
 /**
@@ -31,7 +31,11 @@ export const can = {
     if (u.role === "STORE_OWNER" || !step.approverTeam) return false;
     return canViewStore(u, s) && inTeams(u, [step.approverTeam]);
   },
-  /** Record a value after approval (e.g. the APX PO number). */
+  /** See a landlord's KYC and bank details: HQ, Accounts, HO, Legal, Boss + CEO, and the teams that
+   * fill in the step. Everyone else sees them hidden. */
+  viewSensitive: (u: AccessSubject, s: StoreRef, step: StepRef) =>
+    u.role === "SUPER_ADMIN" || (canViewStore(u, s) && inTeams(u, SENSITIVE_VIEW_TEAMS)) || can.editModule(u, s, step),
+  /** Record something after approval (e.g. HO releases the advance, the APX PO number). */
   recordAfterApproval: (u: AccessSubject, s: StoreRef, teams: readonly string[]) =>
     u.role === "SUPER_ADMIN" || (u.role !== "STORE_OWNER" && canViewStore(u, s) && inTeams(u, teams)),
   comment: (u: AccessSubject, s: StoreRef) => canViewStore(u, s),

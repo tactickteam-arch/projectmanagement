@@ -1,50 +1,45 @@
 # Open questions
 
-Sources of truth:
-- *Sangeetha Mobiles – Store Launch Tracker: Project Spec* (11 Nov 2026).
-- *New outlet launch: user flow* diagram (17 Nov 2026). It replaces the spec's module list.
+Source of truth: **`Sangeetha_New_Outlet_Launch_SOP_v2.pptx`** (11 slides), built "tooth and nail" from 18 Nov 2026.
 
-None of the items below is decided by these sources. The demo uses the interim choice shown for each. These are demo assumptions, not confirmed business rules. Most of them can be changed in **Settings** without code.
+The app follows every rule the slides state. The items below are **not** stated in the slides. For each one the app uses the interim choice shown. Please confirm or correct them; most can be changed in **Settings** without code.
 
-## From the launch-flow diagram (17 Nov)
-| # | Question | Demo assumption |
+## Who does what
+| # | Question (slide) | What the app does now |
 |---|---|---|
-| 1 | What are the real **8 points of the landlord check**? The diagram names only two: commercial terms and civil work by landlord. | Placeholders: commercial terms; civil work done; title documents; electrical load; water and washroom; shutter and frontage; signage permission; building NOC. All 8 must be marked "Cleared" before RK can approve. Editable in Settings → Checklists. |
-| 2 | What are the real **8 points of the key handover check**? | Placeholders: all keys; civil work complete; flooring, walls and ceiling; power and meter; water and washroom; shutter and locks; no leakage; meter readings. All must be "OK". Editable in Settings → Checklists. |
-| 3 | **Who is RK?** One person or a team? Should someone stand in when RK is away? | A team called "RK", with one demo user. HQ (SuperAdmin) can approve any step as a fallback. |
-| 4 | "Boss + CEO": do **both** have to approve, or is one approval enough? | One approval from the Leadership team is enough. |
-| 5 | Step 2 is "managed by Accounts", but its points belong to State admin and ASM. Who fills in the step in the app? | Accounts and State admin. ASM has no login (no role for ASM yet). |
-| 6 | Step 1 owners: ASM, SH, BH and State admin are Sangeetha people, but the step is "done by store owner". Who fills it in? | The store owner fills it in. Each point shows its owner (ASM · SH, SH/BH, State admin) as a label. |
-| 7 | Token advance is approved by Accounts, and Accounts also fills it in. Is self-approval OK, or should a second person in Accounts approve? | The same team may fill in and approve. |
-| 8 | Who raises the **PO in APX**: Accounts or Purchase? Should the app check the PO number against APX? | Either team can record the APX PO number after approval. There is no APX integration; the number is typed in. |
-| 9 | Step 4 "runs alongside steps 3–5". Does it block anything, such as the key handover or the soft launch? | It starts after the landlord check, has no approver and blocks nothing. It is still needed for "all steps done" before the soft launch. |
-| 10 | Does step 4 need an approver (e.g. Legal head)? | No approver: Legal marks it green. |
-| 11 | **Trade licence** (step 6 track) vs **S&E / BBMP / Labour licences** (step 4): are they different licences? | They are kept separate. Step 4 is owned by Legal; the Trade licence track is also owned by Legal. |
-| 12 | What are the start days and durations of the **8 setup tracks** after Day 0? | Placeholders: Marketing 0+25, Interiors 0+21, Brand promoters 14+14, HR 0+21, Stocks 21+7, Finance & IT 0+21, Trade licence 0+21, Launch planning 14+14. Editable in Settings → Scheduling. |
-| 13 | Do any setup tracks need approval (e.g. Interiors by HQ, Marketing branding by Marketing head)? | None: each department marks its own track green. Settings → Steps & approvals can add an approver to any step. |
-| 14 | Can some setup tracks start before the keys (e.g. HR hiring, stock ordering)? | All tracks start after RK accepts the handover, as in the diagram. |
-| 15 | Which teams are **state-wise**? Should a Bengaluru State admin see only Karnataka stores? | Each team member can be limited to states in Settings; the demo team members see all states. |
-| 16 | Soft launch: who confirms it, and is there a "grand launch" later? | The store owner or HQ enters the soft launch date once all departments are green. No grand-launch step. |
-| 17 | Photo minimums per step (not in the diagram). | Location filing 1; landlord check 1; key handover 2; Marketing 2; Interiors 2; Brand promoters 1; Finance & IT 1; the others 0. |
+| 1 | Who creates a new store in the app? (slide 2: location identification by ASM / SH) | The store owner or HQ creates the store record; ASM, SH, BH and State Admin can then fill in the 41-point sheet. |
+| 2 | "Boss + CEO": do **both** have to approve, or is one approval enough? (slides 2, 3) | One approval from the Leadership team. |
+| 3 | Is **RK** one person or a team? Who stands in when RK is away? | A team called "RK". HQ can approve any step as a fallback. |
+| 4 | Who approves the **interior vendor quotation** (slide 10, weeks 1–2)? | Boss + CEO. It can start from week 1, before the location is approved. |
+| 5 | Slide 5 step 5 says the APX PO is "raised automatically". There is no APX connection. | Accounts or Purchase types the APX PO number after Accounts approves. It does not hold up "Token paid". |
+| 6 | Is the token advance "paid" when Accounts approves, or when HO releases the money? (slide 5 steps 3–4) | When HO records the payment (amount, date, mode, UTR). Until then the step is not green and the next steps stay locked. |
+| 7 | Soft launch (stage 7): who runs the audit and marks it done? | State Admin or ASM. Marking it done records the soft launch date. |
 
-## From the spec's own list
-| # | Question | Demo assumption |
+## Rules and data
+| # | Question (slide) | What the app does now |
 |---|---|---|
-| 18 | Login: phone OTP, e-mail + password, or both? | E-mail + password (decided 11 Nov). OTP deferred (needs a paid SMS provider). |
-| 19 | Hosting: Sangeetha servers or cloud? | Supabase PostgreSQL (Seoul region) and Vercel. |
+| 8 | 41-point MOU sheet (slide 3): which points are mandatory? | All of them, except 36 (MOU copy) and 37 (GST no.), which say "if applicable". |
+| 9 | Branch code (point 2). | The store code the app gives (e.g. SGM-KA-BLR-0001). Points 1, 2, 4, 5 and 6 come from the store record. |
+| 10 | Who may see the landlord's PAN, Aadhaar and bank details (points 31–35)? | Accounts, HO, Legal, Boss + CEO, HQ and whoever fills in step 1. Everyone else sees "Hidden (KYC)". Only the last 4 Aadhaar digits are ever stored. |
+| 11 | Power load (slide 4): what about stores above 3,000 sq ft? | The table ends at 3,000 sq ft (30 kW); bigger stores need at least 30 kW and are flagged. Single-phase or too little load blocks completion and approval of steps 1 and 2. |
+| 12 | AC sizing (slide 8): "1 ton per 150 sq ft" — rounded up? | Rounded up (1,200 sq ft → 8 ton). Split AC below 1,000 sq ft, cassette from 1,000 sq ft. |
+| 13 | T-7 rule (slide 6): how is "one week before" checked? | The sign board and material ordering must both be done, with a finish date at least 7 days before the handover date. Otherwise RK cannot accept the handover. |
+| 14 | Legal & statutory (stage 4) includes the balance deposit "upon handover". | Legal can work on it from step 2, but can only mark it done after the keys. |
+| 15 | Photo minimums. | None (the slides ask for none). Each step has an optional photo upload; required documents (property tax, building plan, landlord confirmation, signed MOU, agreement, licences, GST certificate, quotation) must be uploaded. |
 
-## Found while building
-| # | Question | Demo assumption |
+## Schedule
+| # | Question (slide) | What the app does now |
 |---|---|---|
-| 20 | Store code: city codes list, and is NNNN global / per state / per city? | Known city list (BLR, CHE, …) else first 3 letters; one running number overall. |
-| 21 | Which fields are mandatory before "Completed"? | Every point of the step; handover date and "received by" on the key handover; the checklist rules above; photo minimums; a blocker reason when Blocked. |
-| 22 | Planned end = start + duration? | Yes. |
-| 23 | Can HQ reopen an approved step? | No. Approved steps are locked. |
-| 24 | Target launch on handover: overwrite or keep an earlier date? | Filled only if empty (Day 0 + 30, editable in Settings). |
-| 25 | Re-entering the handover date: which tracks are rescheduled? | Only tracks still Not Started. |
-| 26 | Can state/city change after creation (store code depends on them)? | No. |
-| 27 | Overdue check schedule (spec: daily). | Runs on the first page load of each IST day; overdue tracks notify their own departments. |
-| 28 | Session length. | 8 hours. |
-| 29 | How users get their first password / reset. | SuperAdmin sets and resets it in Settings. |
-| 30 | Competitor list for "nearby competitors". | Free text. |
-| 31 | Data residency: Supabase project is in Seoul. | Move to a Mumbai project before real data. |
+| 16 | 13-week chart (slide 10): when does week 1 start? | The day the store is created. Keys are planned for week 8 until point 11 (expected key date) is filled in; the soft launch target is week 13, then keys + 5 weeks once the keys are in. |
+| 17 | Stage 6 department tracks: start days and durations after the keys. | From the chart: Marketing 0+35, Interiors 0+28, Brand promoters 0+35, HR 0+21, Stocks 7+28, Finance & IT 0+28, Trade licence 0+28, Launch planning 7+28 days. On-site work one week each: furniture, electrical, AC, branding. Editable in Settings → Scheduling. |
+| 18 | Weekly RAG (slide 11): what makes a step Amber? | Due within 3 days, late to start, or waiting for an approval / HO's payment. Red = overdue or blocked. Sent every Monday to HQ, State Admin, ASM, SH, BH, Legal, Marketing and HO. |
+| 19 | One week before the expected keys (slide 6), who is told? | Every Stage 6 team and RK. If the sign board or materials are not done, State Admin, ASM, Marketing, Interiors and IT/Admin get a T-7 warning. |
+
+## From the earlier spec (still apply)
+| # | Question | What the app does now |
+|---|---|---|
+| 20 | Login: phone OTP, e-mail + password, or both? | E-mail + password. OTP later (needs a paid SMS provider). |
+| 21 | Store code: city codes and numbering. | Known city list (BLR, CHE, …), else the first 3 letters; one running number overall. |
+| 22 | Can HQ reopen an approved step? | No. Approved steps are locked. |
+| 23 | Daily checks (delays, T-7 alerts, weekly RAG). | Run on the first page load of each day (India time). |
+| 24 | Data residency: the Supabase project is in Seoul. | Move to a Mumbai project before real data. |

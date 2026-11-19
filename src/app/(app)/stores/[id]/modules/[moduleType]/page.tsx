@@ -1,22 +1,22 @@
-import { Comments } from "@/components/comments";
+import { notFound } from "next/navigation";
+import Link from "next/link";
 import { AfterApprovalForm } from "@/components/after-approval-form";
+import { Comments } from "@/components/comments";
 import { DecisionButtons } from "@/components/decision-buttons";
 import { DONE_BY_STYLE } from "@/components/launch-flow";
-import { displayValue } from "@/lib/field-display";
-import { ModuleForm } from "@/components/module-form";
+import { ModuleForm, type PreKeyState } from "@/components/module-form";
 import { PageHeader } from "@/components/page-header";
 import { ApprovalBadge, ModuleStatusBadge, OverdueBadge } from "@/components/status-badge";
-import { Uploader } from "@/components/uploader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requirePageUser } from "@/lib/auth/dal";
 import { can } from "@/lib/auth/permissions";
-import { formatDate, formatDateTime, formatINR } from "@/lib/format";
-import { getStoreDetailForPage, type ModuleView } from "@/lib/queries";
+import { displayValue } from "@/lib/field-display";
+import { formatDateTime } from "@/lib/format";
+import { getStoreDetailForPage, type ModuleView, type StoreDetail } from "@/lib/queries";
+import { listComments } from "@/lib/services/comments";
 import { teamLabel, teamsLabel } from "@/lib/teams";
 import { cn } from "@/lib/utils";
-import { listComments } from "@/lib/services/comments";
-import { notFound } from "next/navigation";
 
 export const metadata = { title: "Step" };
 
@@ -27,26 +27,28 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
   const m = store.modules.find((x) => x.moduleType === moduleType);
   if (!m) notFound();
 
-  const isOwner = can.editModule(user, store, m);
+  const canEdit = can.editModule(user, store, m);
   const canApprove = can.approveModule(user, store, m);
   const approver = m.approverTeam ? teamLabel(m.approverTeam) : null;
   const comments = (await listComments(user, m.id)).map((c) => ({ ...c, createdAt: c.createdAt.toISOString() }));
-  const editableFiles = isOwner && !(m.status === "COMPLETED");
-  const files = (tag: string) => m.attachments.filter((a) => a.tag === tag);
-  const countingPhotos = m.attachments.filter((a) => a.fileType.startsWith("image/") && (!m.photoTag || a.tag === m.photoTag)).length;
-  const fileFields = m.fields.filter((f) => f.type === "file");
   const home = user.role === "STORE_OWNER" ? { label: "My stores", href: "/owner" } : user.role === "TEAM_MEMBER" ? { label: "My tasks", href: "/tasks" } : { label: "Dashboard", href: "/hq" };
-  const afterValue = m.afterApproval ? ((m.details[m.afterApproval.key] as string | undefined) ?? null) : null;
+  const approved = m.status === "COMPLETED" && m.approvalStatus === "APPROVED";
+  const pending = m.status === "COMPLETED" && m.approvalStatus === "PENDING";
+  const preKey = preKeyState(store);
 
   return (
     <>
       <PageHeader
         crumbs={[home, { label: store.name, href: `/stores/${store.id}` }, { label: m.displayName }]}
-        title={`${m.step} · ${m.displayName}`}
+        title={`${m.code} · ${m.displayName}`}
         description={
           <span className="flex flex-wrap items-center gap-1.5">
-            <ModuleStatusBadge status={m.status} />
-            <ApprovalBadge status={m.approvalStatus} show={!!approver && (m.status === "COMPLETED" || m.approvalStatus !== "PENDING")} approver={approver} />
+            {m.done ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">✓ Done</span>
+            ) : (
+              <ModuleStatusBadge status={m.status} />
+            )}
+            <ApprovalBadge status={m.approvalStatus} show={!!approver && !m.done && (m.status === "COMPLETED" || m.approvalStatus !== "PENDING")} approver={approver} />
             <OverdueBadge days={m.daysOverdue} />
             <span className="text-xs">
               {store.storeCode} · last updated {formatDateTime(m.updatedAt)}
@@ -54,10 +56,10 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
             </span>
           </span>
         }
-        actions={canApprove && m.status === "COMPLETED" && m.approvalStatus === "PENDING" ? <DecisionButtons moduleId={m.id} moduleName={m.displayName} size="default" /> : null}
+        actions={canApprove && pending ? <DecisionButtons moduleId={m.id} moduleName={m.displayName} size="default" /> : null}
       />
 
-      {m.approvalStatus === "REJECTED" && m.approvalComment && (
+      {m.approvalStatus === "REJECTED" && m.approvalComment && m.status !== "COMPLETED" && (
         <Alert className="mb-4 border-amber-300 bg-amber-50">
           <AlertTitle>
             Sent back by {approver ?? "HQ"}
@@ -66,15 +68,24 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
           <AlertDescription className="text-amber-900">“{m.approvalComment}”</AlertDescription>
         </Alert>
       )}
-      {m.done && (
+      {approved && (
         <Alert className="mb-4 border-emerald-200 bg-emerald-50">
           <AlertTitle>
             {approver ? `Approved by ${m.approvedBy ?? approver} (${approver})` : `Marked done by ${m.approvedBy ?? teamsLabel(m.editTeams)}`} on {formatDateTime(m.approvedAt)}
           </AlertTitle>
-          {m.approvalComment && <AlertDescription>“{m.approvalComment}”</AlertDescription>}
+          <AlertDescription>
+            {m.approvalComment ? `“${m.approvalComment}” · ` : ""}
+            {m.pendingGates.length > 0 ? `Not green yet — waiting for: ${m.afterActions.filter((a) => m.pendingGates.includes(a.key)).map((a) => a.label.toLowerCase()).join(", ")}.` : "This step is done and locked."}
+          </AlertDescription>
         </Alert>
       )}
-      {m.status === "BLOCKED" && m.blockerReason && !isOwner && (
+      {pending && canApprove && (
+        <Alert className="mb-4 border-amber-300 bg-amber-50">
+          <AlertTitle>Waiting for your approval{approver ? ` as ${approver}` : ""}</AlertTitle>
+          <AlertDescription className="text-amber-900">{m.approvalNote}. Review the details below, then approve or send it back with a comment.</AlertDescription>
+        </Alert>
+      )}
+      {m.status === "BLOCKED" && m.blockerReason && !canEdit && (
         <Alert className="mb-4 border-red-200 bg-red-50">
           <AlertTitle>Blocked</AlertTitle>
           <AlertDescription className="text-red-800">{m.blockerReason}</AlertDescription>
@@ -83,51 +94,14 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-4">
-          {isOwner ? (
-            <ModuleForm storeId={store.id} m={m} countingPhotos={countingPhotos} />
-          ) : (
-            <ReadOnlyModule m={m} />
-          )}
+          {m.review && <ReviewPanel m={m} storeId={store.id} />}
+          <ModuleForm storeId={store.id} m={m} areaSqft={store.carpetAreaSqft} preKey={preKey} readOnly={!canEdit} />
         </div>
         <div className="space-y-4">
           <StepInfo m={m} approver={approver} />
-          {m.afterApproval && m.done && (
-            <AfterApprovalForm
-              moduleId={m.id}
-              label={m.afterApproval.label}
-              title={afterValue ? m.afterApproval.doneText : m.afterApproval.pendingText}
-              value={afterValue}
-              canEdit={can.recordAfterApproval(user, store, m.afterApproval.teams)}
-              teams={teamsLabel(m.afterApproval.teams)}
-            />
-          )}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Photos &amp; documents</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {m.minPhotos > 0 ? `${m.minPhotos} photo${m.minPhotos > 1 ? "s" : ""} required to mark Completed · ${countingPhotos} uploaded. ` : "No photos required. "}
-                JPG, PNG, WebP or PDF, up to 10 MB.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {fileFields.map((f) => (
-                <Uploader
-                  key={f.key}
-                  moduleId={m.id}
-                  tag={f.attachmentTag ?? "document"}
-                  label={f.label}
-                  files={files(f.attachmentTag ?? "document")}
-                  canEdit={editableFiles}
-                  photosOnly={(f.attachmentTag ?? "").startsWith("photo")}
-                />
-              ))}
-              <Uploader moduleId={m.id} tag="photo_before" label="Photos — before" files={files("photo_before")} canEdit={editableFiles} photosOnly />
-              <Uploader moduleId={m.id} tag="photo_during" label="Photos — during" files={files("photo_during")} canEdit={editableFiles} photosOnly />
-              <Uploader moduleId={m.id} tag="photo_after" label="Photos — after" files={files("photo_after")} canEdit={editableFiles} photosOnly />
-              <Uploader moduleId={m.id} tag="invoice" label="Invoices & documents" files={[...files("invoice"), ...files("document")]} canEdit={editableFiles} />
-              {isOwner && m.status === "COMPLETED" && <p className="text-xs text-muted-foreground">Files are locked while the step is Completed.</p>}
-            </CardContent>
-          </Card>
+          {m.afterActions.map((a) => (
+            <AfterApprovalForm key={a.key} moduleId={m.id} approved={approved} action={{ ...a, teamsLabel: teamsLabel(a.teams) }} />
+          ))}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Comments</CardTitle>
@@ -142,11 +116,20 @@ export default async function ModulePage({ params }: PageProps<"/stores/[id]/mod
   );
 }
 
+/** Sign board and material ordering status for the T-7 rule (key handover step). */
+function preKeyState(store: StoreDetail): PreKeyState {
+  const of = (t: string) => {
+    const x = store.modules.find((m) => m.moduleType === t);
+    return { done: !!x?.done, completedOn: x?.actualEnd ?? null };
+  };
+  return { signBoard: of("SIGN_BOARD"), materials: of("MATERIAL_ORDERING") };
+}
+
 function StepInfo({ m, approver }: { m: ModuleView; approver: string | null }) {
   return (
     <Card className="gap-3">
       <CardHeader>
-        <CardTitle className="text-base">Step {m.step} in the launch flow</CardTitle>
+        <CardTitle className="text-base">Stage {m.stage} of the SOP</CardTitle>
         <p className="text-sm text-muted-foreground">{m.summary}</p>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
@@ -157,8 +140,13 @@ function StepInfo({ m, approver }: { m: ModuleView; approver: string | null }) {
         <p>
           <span className="text-muted-foreground">Filled in by:</span> {teamsLabel(m.editTeams)}
         </p>
+        {m.supportTeams.length > 0 && (
+          <p>
+            <span className="text-muted-foreground">Support:</span> {teamsLabel(m.supportTeams)}
+          </p>
+        )}
         <p>
-          <span className="text-muted-foreground">{approver ? "Approval:" : "Owner:"}</span> {approver ?? teamsLabel(m.editTeams)} — {m.approvalNote}
+          <span className="text-muted-foreground">{approver ? "Approval:" : m.group === "launch" ? "Gate:" : "Owner:"}</span> {approver ?? (m.group === "launch" ? "All departments green" : teamsLabel(m.editTeams))} — {m.approvalNote}
         </p>
         {m.requires.length > 0 && (
           <p>
@@ -167,7 +155,7 @@ function StepInfo({ m, approver }: { m: ModuleView; approver: string | null }) {
           </p>
         )}
         {m.notes.map((n) => (
-          <p key={n} className="text-muted-foreground">
+          <p key={n} className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-950">
             {n}
           </p>
         ))}
@@ -177,98 +165,34 @@ function StepInfo({ m, approver }: { m: ModuleView; approver: string | null }) {
   );
 }
 
-function ReadOnlyModule({ m }: { m: ModuleView }) {
-  const row = (k: string, v: string) => (
-    <div key={k}>
-      <dt className="text-xs text-muted-foreground">{k}</dt>
-      <dd className="mt-0.5 text-sm">{v}</dd>
-    </div>
-  );
-  const tasks = m.fields.filter((f) => f.type === "task");
+/** Values of an earlier step shown for review (e.g. Accounts verifies the MOU sheet's terms and KYC). */
+function ReviewPanel({ m, storeId }: { m: ModuleView; storeId: string }) {
+  if (!m.review) return null;
   return (
-    <>
-      {tasks.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Points</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-1.5 text-sm">
-              {tasks.map((t) => (
-                <li key={t.key} className="flex items-center gap-2">
-                  <span className={m.details[t.key] === true ? "text-emerald-700" : "text-muted-foreground"}>{m.details[t.key] === true ? "✓" : "○"}</span>
-                  {t.label}
-                  {t.owner && <span className="text-xs text-muted-foreground">{t.owner}</span>}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Status, schedule &amp; cost</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-            {row("Planned", m.plannedStart ? `${formatDate(m.plannedStart)} – ${formatDate(m.plannedEnd)}` : "—")}
-            {row("Actual", m.actualStart ? `${formatDate(m.actualStart)} – ${m.actualEnd ? formatDate(m.actualEnd) : "ongoing"}` : "—")}
-            {row("Vendor", [m.vendorName, m.vendorPhone].filter(Boolean).join(" · ") || "—")}
-            {row("Estimated / actual cost", `${formatINR(m.estCost)} / ${formatINR(m.actualCost)}`)}
-            {row("Completed on", m.completedAt ? formatDateTime(m.completedAt) : "—")}
-            {row("Remarks", m.remarks || "—")}
-          </dl>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{m.displayName} details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-            {m.fields
-              .filter((f) => f.type !== "file" && f.type !== "task")
-              .filter((f) => !f.showWhen || m.details[f.showWhen.key] === f.showWhen.equals)
-              .map((f) =>
-                f.type === "checklist" ? (
-                  <div key={f.key} className="sm:col-span-2">
-                    <dt className="text-xs text-muted-foreground">{f.label}</dt>
-                    <dd className="mt-1">
-                      {Array.isArray(m.details[f.key]) && (m.details[f.key] as unknown[]).length ? (
-                        <table className="w-full text-sm">
-                          <thead className="text-left text-xs text-muted-foreground">
-                            <tr>
-                              {(f.itemFields ?? []).map((c) => (
-                                <th key={c.key} className="py-1 font-medium">
-                                  {c.label}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(m.details[f.key] as Record<string, unknown>[]).map((r, i) => (
-                              <tr key={i} className="border-t">
-                                {(f.itemFields ?? []).map((c) => (
-                                  <td key={c.key} className="py-1 pr-2">
-                                    {displayValue(c, r[c.key])}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : (
-                        "—"
-                      )}
-                    </dd>
-                  </div>
-                ) : (
-                  row(f.label + (f.unit && !["number"].includes(f.type) ? ` (${f.unit})` : ""), displayValue(f, m.details[f.key]))
-                ),
-              )}
-          </dl>
-        </CardContent>
-      </Card>
-    </>
+    <Card className="gap-3 border-indigo-200">
+      <CardHeader>
+        <CardTitle className="text-base">{m.review.title}</CardTitle>
+        <CardDescription>
+          From{" "}
+          <Link href={`/stores/${storeId}/modules/${m.review.fromType}`} className="underline">
+            the location filing
+          </Link>
+          . Change them there if they are wrong.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          {m.review.items.map(({ field, value }) => (
+            <div key={field.key} className={field.type === "longtext" ? "sm:col-span-2" : ""}>
+              <dt className="text-xs text-muted-foreground">
+                {field.sr !== undefined ? `${field.sr}. ` : ""}
+                {field.label}
+              </dt>
+              <dd className="mt-0.5 whitespace-pre-line">{displayValue(field, value)}</dd>
+            </div>
+          ))}
+        </dl>
+      </CardContent>
+    </Card>
   );
 }

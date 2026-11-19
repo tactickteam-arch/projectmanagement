@@ -6,6 +6,7 @@ import { DEFAULT_TARGET_LAUNCH_OFFSET_DAYS } from "@/lib/scheduling";
 export const SETTING_KEYS = {
   targetLaunchOffsetDays: "target_launch_offset_days",
   lastOverdueCheck: "last_overdue_check",
+  lastRagWeek: "last_rag_week",
 } as const;
 
 /** Pass the transaction client when called inside a transaction, so the read uses the same connection. */

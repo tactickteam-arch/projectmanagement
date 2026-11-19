@@ -95,7 +95,7 @@ export async function updateUser(user: CurrentUser, userId: string, raw: unknown
 
 /** Settings → steps: schedule defaults, who fills in / approves the step, checklist items. */
 export const TemplateUpdateInput = z.object({
-  defaultStartOffsetDays: z.number().int().min(0).max(365).nullable().optional(),
+  defaultStartOffsetDays: z.number().int().min(-365).max(365).nullable().optional(),
   defaultDurationDays: z.number().int().min(1).max(365).nullable().optional(),
   editTeams: z.array(z.string().refine((t) => t === STORE_OWNER_TEAM || isTeamKey(t), "Unknown team")).min(1, "Choose at least one team").max(20).optional(),
   approverTeam: z.string().refine(isTeamKey, "Unknown team").nullable().optional(),

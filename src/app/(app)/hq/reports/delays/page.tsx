@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { requirePageUser } from "@/lib/auth/dal";
 import { formatDate } from "@/lib/format";
 import { delaysReport } from "@/lib/queries";
+import { teamsLabel } from "@/lib/teams";
 
 export const metadata = { title: "Delays report" };
 
@@ -18,7 +19,7 @@ export default async function DelaysPage() {
       <PageHeader
         crumbs={[{ label: "Dashboard", href: "/hq" }, { label: "Delays report" }]}
         title="Delays report"
-        description="Overdue launch steps — planned end date has passed and the step is not Completed — sorted by days overdue."
+        description="Overdue SOP steps — planned end date has passed and the step is not Completed — sorted by days overdue. The owning team gets a delay alert every day."
         actions={
           <Button asChild variant="outline" size="sm">
             <a href="/api/reports/delays?format=xlsx">
@@ -36,7 +37,7 @@ export default async function DelaysPage() {
               <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2.5 text-right font-medium">Days overdue</th>
-                  <th className="px-4 py-2.5 font-medium">Module</th>
+                  <th className="px-4 py-2.5 font-medium">Step · owner</th>
                   <th className="px-4 py-2.5 font-medium">Store</th>
                   <th className="px-4 py-2.5 font-medium">Store owner</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
@@ -51,8 +52,11 @@ export default async function DelaysPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/stores/${r.store.id}/modules/${r.moduleType}`} className="font-medium hover:underline">
+                        <span className="mr-1 font-mono text-xs text-muted-foreground">{r.code}</span>
                         {r.displayName}
                       </Link>
+                      <p className="text-xs text-muted-foreground">{teamsLabel(r.ownerTeams)}</p>
+                      {r.waitingFor.length > 0 && <p className="mt-0.5 text-xs text-amber-700">Still waiting for {r.waitingFor.join(", ")}</p>}
                       {r.blockerReason && <p className="mt-0.5 text-xs text-red-700">Blocked: {r.blockerReason}</p>}
                     </td>
                     <td className="px-4 py-3">

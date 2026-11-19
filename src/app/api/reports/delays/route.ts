@@ -5,6 +5,7 @@ import { xlsxResponse } from "@/lib/excel";
 import { stateName } from "@/lib/india-states";
 import { delaysReport } from "@/lib/queries";
 import { MODULE_STATUS_LABELS } from "@/lib/status";
+import { teamsLabel } from "@/lib/teams";
 
 /** GET /api/reports/delays — overdue modules sorted by days overdue; ?format=xlsx. */
 export async function GET(request: Request) {
@@ -22,6 +23,8 @@ export async function GET(request: Request) {
             { header: "State", key: "state" },
             { header: "Store owner", key: "owner", width: 28 },
             { header: "Step", key: "module", width: 32 },
+            { header: "Owner", key: "ownerTeams", width: 30 },
+            { header: "Waiting for", key: "waiting", width: 30 },
             { header: "Status", key: "status" },
             { header: "Planned end", key: "end", width: 14 },
             { header: "Days overdue", key: "days", width: 12 },
@@ -33,7 +36,9 @@ export async function GET(request: Request) {
             city: r.store.city,
             state: stateName(r.store.state),
             owner: r.store.ownerName,
-            module: r.displayName,
+            module: `${r.code} ${r.displayName}`,
+            ownerTeams: teamsLabel(r.ownerTeams),
+            waiting: r.waitingFor.join(", "),
             status: MODULE_STATUS_LABELS[r.status],
             end: r.plannedEnd,
             days: r.daysOverdue,

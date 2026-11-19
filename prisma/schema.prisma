@@ -1,6 +1,6 @@
 // Sangeetha Mobiles – Store Launch Tracker
 // Tables follow "Database tables" in the project spec (11 Nov 2026); steps follow the
-// "New outlet launch: user flow" (17 Nov 2026).
+// New Outlet Launch SOP v2 (18 Nov 2026).
 // Module-specific fields live in StoreModule.details (JSONB), validated against
 // ModuleTemplate.fieldSchema, so new modules/fields need no schema change.
 
@@ -102,6 +102,10 @@ model Store {
   owner            User           @relation("StoreOwner", fields: [ownerId], references: [id])
   targetLaunchDate DateTime?      @map("target_launch_date") @db.Date
   keyHandoverDate  DateTime?      @map("key_handover_date") @db.Date
+  /// Expected key handover (41-point MOU sheet, point 11). The T-7 work is planned back from it.
+  expectedKeyDate  DateTime?      @map("expected_key_date") @db.Date
+  /// Expected key date for which the T-7 intimation was sent (SOP slide 6).
+  preKeyNotifiedFor DateTime?     @map("pre_key_notified_for") @db.Date
   actualLaunchDate DateTime?      @map("actual_launch_date") @db.Date
   /// Null until the first milestone (Location Finalised) is reached — see REQUIREMENTS.md Q-STATUS-NEW.
   overallStatus    OverallStatus? @map("overall_status")
@@ -124,7 +128,7 @@ model ModuleTemplate {
   moduleType             String  @unique @map("module_type")
   displayName            String  @map("display_name")
   sortOrder              Int     @map("sort_order")
-  /// Days after key handover. Null for modules not scheduled from handover.
+  /// Days from the step's schedule anchor (store created, expected keys or Day 0 — see src/modules).
   defaultStartOffsetDays Int?    @map("default_start_offset_days")
   defaultDurationDays    Int?    @map("default_duration_days")
   fieldSchema            Json    @map("field_schema")

@@ -80,21 +80,24 @@ describe("step permissions (who fills in / approves)", () => {
 });
 
 describe("launch-flow step definitions", () => {
-  it("has 13 steps (5 + 8 department tracks) with unique types and orders", () => {
-    assert.equal(MODULE_DEFINITIONS.length, 13);
-    assert.equal(new Set(MODULE_DEFINITIONS.map((m) => m.moduleType)).size, 13);
-    assert.equal(new Set(MODULE_DEFINITIONS.map((m) => m.sortOrder)).size, 13);
-    assert.equal(MODULE_DEFINITIONS.filter((m) => m.step === 6).length, 8);
+  it("has 21 SOP steps (gates, legal, pre-key, on-site, 8 department tracks, soft launch) with unique types and orders", () => {
+    assert.equal(MODULE_DEFINITIONS.length, 21);
+    assert.equal(new Set(MODULE_DEFINITIONS.map((m) => m.moduleType)).size, 21);
+    assert.equal(new Set(MODULE_DEFINITIONS.map((m) => m.sortOrder)).size, 21);
+    assert.equal(MODULE_DEFINITIONS.filter((m) => m.group === "track").length, 8);
+    assert.equal(MODULE_DEFINITIONS.filter((m) => m.group === "site").length, 4);
   });
 
-  it("approvers follow the flow: Boss + CEO, RK, Accounts, none for Legal, RK; departments mark green", () => {
+  it("approvers follow the SOP: Boss + CEO, RK, Accounts, none for Legal, RK; departments mark green", () => {
     const approvers = Object.fromEntries(MODULE_DEFINITIONS.map((m) => [m.moduleType, m.approverTeam]));
     assert.equal(approvers.LOCATION_FILING, "LEADERSHIP");
     assert.equal(approvers.LANDLORD_CHECK, "RK");
     assert.equal(approvers.TOKEN_ADVANCE, "ACCOUNTS");
     assert.equal(approvers.LEGAL_STATUTORY, null);
     assert.equal(approvers.KEY_HANDOVER, "RK");
-    for (const m of MODULE_DEFINITIONS.filter((x) => x.step === 6)) assert.equal(m.approverTeam, null, m.moduleType);
+    assert.equal(approvers.INTERIORS_QUOTE, "LEADERSHIP");
+    assert.equal(approvers.SOFT_LAUNCH, null);
+    for (const m of MODULE_DEFINITIONS.filter((x) => x.group === "track" || x.group === "site")) assert.equal(m.approverTeam, null, m.moduleType);
   });
 
   it("every team used by a step exists", () => {

@@ -1,10 +1,12 @@
 import type { ApprovalStatus, ModuleStatus, OverallStatus } from "@/generated/prisma/enums";
-import { KEY_HANDOVER, LANDLORD_CHECK, LOCATION_FILING, MODULE_TYPES, SETUP_TRACK_TYPES, TOKEN_ADVANCE } from "@/modules";
+import { getModuleDefinition, KEY_HANDOVER, LANDLORD_CHECK, LOCATION_FILING, MODULE_TYPES, SETUP_TRACK_TYPES, SITE_TYPES, SOFT_LAUNCH, TOKEN_ADVANCE } from "@/modules";
 
 export interface ModuleState {
   moduleType: string;
   status: ModuleStatus;
   approvalStatus: ApprovalStatus;
+  /** Needed to see whether gating after-approval records exist (e.g. HO paid the token advance). */
+  details?: unknown;
 }
 
 export interface StoreState {
@@ -16,12 +18,22 @@ export interface StoreState {
 /** Statuses only HQ can set; automatic updates never overwrite them. */
 export const MANUAL_STATUSES: readonly OverallStatus[] = ["ON_HOLD", "DROPPED"];
 
-/** A step is done (green) when Completed and approved. Steps without an approver are approved
- * automatically when the owning team marks them Completed. */
+/** Completed and approved (a step without an approver is approved when its team marks it done). */
 export function isApproved(m: ModuleState): boolean {
   return m.status === "COMPLETED" && m.approvalStatus === "APPROVED";
 }
-export const isDone = isApproved;
+
+/** Keys of gating records still missing after approval (e.g. "payment" on the token advance). */
+export function pendingGates(m: ModuleState): string[] {
+  const def = getModuleDefinition(m.moduleType);
+  const details = (m.details ?? {}) as Record<string, unknown>;
+  return (def?.afterApproval ?? []).filter((a) => a.gate && !details[a.key]).map((a) => a.key);
+}
+
+/** Done (green): approved, with every gating record made. */
+export function isDone(m: ModuleState): boolean {
+  return isApproved(m) && pendingGates(m).length === 0;
+}
 
 /** Only the steps of the current flow (rows of retired module types are ignored). */
 export function flowModules<T extends ModuleState>(modules: T[]): T[] {
@@ -29,32 +41,29 @@ export function flowModules<T extends ModuleState>(modules: T[]): T[] {
 }
 
 /**
- * Overall status, following the launch flow, checked from the furthest stage back:
- *   Launched (soft launch)  — actual launch date entered (step 7)
- *   Ready for Launch        — every step done: steps 1–5 and all department tracks green
- *   Store setup in progress — keys accepted and any department track started (step 6)
- *   Keys Received           — RK accepted the key handover (key handover date set, step 5)
- *   Token Paid              — Token advance approved by Accounts (step 3)
- *   Landlord check cleared  — 8-point landlord check approved by RK (step 2)
- *   Location approved       — Location filing approved by Boss + CEO (step 1)
- *   null                    — location filing still in progress
+ * Overall status along the SOP stages, checked from the furthest back:
+ *   Soft launched            — 7 · Soft launch done
+ *   All departments green    — every Stage 6 track green (soft launch gate open)
+ *   Store setup in progress  — keys accepted and on-site work or any department track started
+ *   Keys received            — RK accepted the key handover (Day 0)
+ *   Token paid               — Accounts approved and HO paid the token advance
+ *   Landlord check cleared   — RK cleared all 8 landlord points
+ *   Location approved        — Boss + CEO approved the location filing
+ *   null                     — location filing in progress
  * On Hold / Dropped are set manually by HQ and are kept as-is.
  */
 export function computeOverallStatus(store: StoreState, modules: ModuleState[]): OverallStatus | null {
-  if (store.overallStatus && MANUAL_STATUSES.includes(store.overallStatus)) {
-    return store.overallStatus;
-  }
+  if (store.overallStatus && MANUAL_STATUSES.includes(store.overallStatus)) return store.overallStatus;
   const byType = new Map(flowModules(modules).map((m) => [m.moduleType, m]));
   const done = (t: string) => {
     const m = byType.get(t);
-    return m !== undefined && isApproved(m);
+    return m !== undefined && isDone(m);
   };
+  const started = (t: string) => (byType.get(t)?.status ?? "NOT_STARTED") !== "NOT_STARTED";
 
-  if (store.actualLaunchDate) return "LAUNCHED";
-  if (MODULE_TYPES.every(done)) return "READY_FOR_LAUNCH";
-  if (store.keyHandoverDate && SETUP_TRACK_TYPES.some((t) => (byType.get(t)?.status ?? "NOT_STARTED") !== "NOT_STARTED")) {
-    return "FITOUT_IN_PROGRESS";
-  }
+  if (store.actualLaunchDate || done(SOFT_LAUNCH)) return "LAUNCHED";
+  if (SETUP_TRACK_TYPES.every(done)) return "READY_FOR_LAUNCH";
+  if (store.keyHandoverDate && [...SITE_TYPES, ...SETUP_TRACK_TYPES].some(started)) return "FITOUT_IN_PROGRESS";
   if (store.keyHandoverDate || done(KEY_HANDOVER)) return "KEYS_RECEIVED";
   if (done(TOKEN_ADVANCE)) return "TOKEN_PAID";
   if (done(LANDLORD_CHECK)) return "PREMISES_CLEARED";
@@ -64,16 +73,16 @@ export function computeOverallStatus(store: StoreState, modules: ModuleState[]):
 
 /** Progress = steps done ÷ all steps × 100 (rounded). */
 export function computeProgressPercent(modules: ModuleState[]): number {
-  return Math.round((countApproved(modules) / MODULE_TYPES.length) * 100);
+  return Math.round((countDone(modules) / MODULE_TYPES.length) * 100);
 }
 
-export function countApproved(modules: ModuleState[]): number {
-  return flowModules(modules).filter(isApproved).length;
+export function countDone(modules: ModuleState[]): number {
+  return flowModules(modules).filter(isDone).length;
 }
 
 export const TOTAL_STEPS = MODULE_TYPES.length;
 
-/** Spec: Overdue = planned end date has passed and status is not Completed. */
+/** Overdue = planned end date has passed and the step is not Completed. */
 export function isOverdue(plannedEnd: Date | null, status: ModuleStatus, today: Date): boolean {
   return plannedEnd !== null && status !== "COMPLETED" && plannedEnd.getTime() < today.getTime();
 }
@@ -82,6 +91,38 @@ export function daysOverdue(plannedEnd: Date | null, status: ModuleStatus, today
   if (!isOverdue(plannedEnd, status, today)) return 0;
   return Math.round((today.getTime() - (plannedEnd as Date).getTime()) / 86_400_000);
 }
+
+/**
+ * Weekly RAG (SOP slide 11), per step:
+ *   Green — done, or on track.
+ *   Amber — due within 3 days, should have started but has not, waiting for approval / a gating
+ *           record, or overdue while still waiting on an earlier step.
+ *   Red   — overdue (and not waiting on an earlier step), or blocked.
+ *   null  — not reached yet (waiting on earlier steps, not due).
+ */
+export type Rag = "R" | "A" | "G";
+export function stepRag(m: ModuleState & { plannedStart: Date | null; plannedEnd: Date | null }, waiting: boolean, today: Date): Rag | null {
+  if (isDone(m)) return "G";
+  if (m.status === "BLOCKED") return "R";
+  const late = m.plannedEnd !== null && m.plannedEnd.getTime() < today.getTime();
+  if (late) return waiting ? "A" : m.status === "COMPLETED" ? "A" : "R";
+  if (m.status === "COMPLETED") return "A";
+  if (waiting) return null;
+  const dueSoon = m.plannedEnd !== null && m.plannedEnd.getTime() - today.getTime() <= 3 * 86_400_000;
+  const lateStart = m.status === "NOT_STARTED" && m.plannedStart !== null && m.plannedStart.getTime() < today.getTime();
+  if (dueSoon || lateStart) return "A";
+  if (m.status === "NOT_STARTED" && m.plannedStart === null) return null;
+  return "G";
+}
+
+export function worstRag(list: (Rag | null)[]): Rag | null {
+  if (list.includes("R")) return "R";
+  if (list.includes("A")) return "A";
+  if (list.includes("G")) return "G";
+  return null;
+}
+
+export const RAG_LABELS: Record<Rag, string> = { R: "Red", A: "Amber", G: "Green" };
 
 export const NO_STATUS_LABEL = "Location filing";
 

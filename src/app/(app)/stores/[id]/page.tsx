@@ -1,4 +1,4 @@
-import { CalendarDays, ClipboardCheck, KeyRound, ListTodo, MapPin, User } from "lucide-react";
+import { CalendarClock, CalendarDays, ClipboardCheck, KeyRound, ListTodo, MapPin, User, Zap } from "lucide-react";
 import Link from "next/link";
 import { ActivityList } from "@/components/activity-list";
 import { FileGallery } from "@/components/file-list";
@@ -18,6 +18,7 @@ import { formatDate, formatINR } from "@/lib/format";
 import { stateName } from "@/lib/india-states";
 import { getStoreDetailForPage, type StoreDetail } from "@/lib/queries";
 import type { AccessSubject } from "@/lib/auth/access";
+import { shiftDate } from "@/lib/sop-rules";
 import { teamLabel } from "@/lib/teams";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +30,7 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
   const store = await getStoreDetailForPage(user, id);
   const today = formatDateOnly(todayInIndia());
   const setup = store.modules;
-  const tracks = store.modules.filter((m) => m.step === 6);
+  const tracks = store.modules.filter((m) => m.group === "track" || m.group === "site" || m.group === "launch");
   const moduleNames = Object.fromEntries(store.modules.map((m) => [m.id, m.displayName]));
   const allFiles = store.modules.flatMap((m) => m.attachments.map((a) => ({ ...a, module: m.displayName })));
   const estTotal = setup.reduce((t, m) => t + (m.estCost ?? 0), 0);
@@ -77,17 +78,33 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
             </p>
           </CardContent>
         </Card>
-        <Card className="gap-2 py-4">
-          <CardContent className="px-4">
-            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <KeyRound className="size-3.5" /> Keys received (Day 0)
-            </p>
-            <p className="mt-1 text-lg font-semibold">{formatDate(store.keyHandoverDate)}</p>
-            <p className="text-xs text-muted-foreground">
-              {store.daysSinceHandover !== null ? `${store.daysSinceHandover} day${store.daysSinceHandover === 1 ? "" : "s"} since handover` : store.actualLaunchDate ? "Store launched" : "Keys not received yet"}
-            </p>
-          </CardContent>
-        </Card>
+        {store.keyHandoverDate ? (
+          <Card className="gap-2 py-4">
+            <CardContent className="px-4">
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <KeyRound className="size-3.5" /> Keys received (Day 0)
+              </p>
+              <p className="mt-1 text-lg font-semibold">{formatDate(store.keyHandoverDate)}</p>
+              <p className="text-xs text-muted-foreground">
+                {store.daysSinceHandover !== null ? `Day ${store.daysSinceHandover} of the setup clock` : "Store launched"}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className={cn("gap-2 py-4", store.daysToExpectedKeys !== null && store.daysToExpectedKeys <= 7 && "border-amber-300 bg-amber-50/60")}>
+            <CardContent className="px-4">
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <CalendarClock className="size-3.5" /> Keys expected
+              </p>
+              <p className="mt-1 text-lg font-semibold">{formatDate(store.expectedKeyDate)}</p>
+              <p className="text-xs text-muted-foreground">
+                {store.expectedKeyDate
+                  ? `T-7: sign board & materials by ${formatDate(shiftDate(store.expectedKeyDate, -7))}${store.daysToExpectedKeys !== null ? ` · ${store.daysToExpectedKeys >= 0 ? `${store.daysToExpectedKeys} day${store.daysToExpectedKeys === 1 ? "" : "s"} to go` : `${-store.daysToExpectedKeys} day${store.daysToExpectedKeys === -1 ? "" : "s"} late`}` : ""}`
+                  : "From MOU point 11 (location filing)"}
+              </p>
+            </CardContent>
+          </Card>
+        )}
         <Card className="gap-2 py-4">
           <CardContent className="px-4">
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -125,7 +142,7 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
         <TabsContent value="timeline" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Store setup tracks: planned vs actual</CardTitle>
+              <CardTitle className="text-base">Stage 6 &amp; 7 from Day 0: planned vs actual</CardTitle>
             </CardHeader>
             <CardContent>
               <Timeline modules={tracks} handover={store.keyHandoverDate} targetLaunch={store.targetLaunchDate} today={today} />
@@ -214,6 +231,7 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
                 <Info k="Floor" v={store.floor ? store.floor[0] + store.floor.slice(1).toLowerCase() : null} />
                 <Info k="Store owner" v={`${store.owner.name} · ${store.owner.email}${store.owner.phone ? ` · ${store.owner.phone}` : ""}`} />
                 <Info k="Target launch" v={formatDate(store.targetLaunchDate)} />
+                <Info k="Keys expected (MOU point 11)" v={formatDate(store.expectedKeyDate)} />
                 <Info k="Keys received (Day 0)" v={formatDate(store.keyHandoverDate)} />
                 <Info k="Soft launch" v={formatDate(store.actualLaunchDate)} />
               </dl>
@@ -237,11 +255,14 @@ function Info({ k, v }: { k: string; v: string | null | undefined }) {
 /** What the signed-in user can do on this store now: steps their team fills in that are ready,
  * and steps waiting for their approval. */
 function YourActions({ store, user }: { store: StoreDetail; user: AccessSubject }) {
-  const toDo = store.modules.filter((m) => !m.done && m.waitingFor.length === 0 && !(m.status === "COMPLETED" && m.approvalStatus === "PENDING") && can.editModule(user, store, m));
+  const toDo = store.modules.filter((m) => !m.done && m.waitingFor.length === 0 && m.status !== "COMPLETED" && can.editModule(user, store, m));
   const toApprove = store.modules.filter((m) => m.status === "COMPLETED" && m.approvalStatus === "PENDING" && can.approveModule(user, store, m));
+  const toRecord = store.modules.flatMap((m) =>
+    m.status === "COMPLETED" && m.approvalStatus === "APPROVED" ? m.afterActions.filter((a) => !a.record && a.canRecord).map((a) => ({ m, a })) : [],
+  );
   // SuperAdmin can act on every step; only show them approvals plus a short list.
   const list = user.role === "SUPER_ADMIN" ? toDo.slice(0, 4) : toDo;
-  if (!list.length && !toApprove.length) return null;
+  if (!list.length && !toApprove.length && !toRecord.length) return null;
   return (
     <Alert className="mt-4 border-sky-200 bg-sky-50">
       <ListTodo className="size-4" />
@@ -251,15 +272,22 @@ function YourActions({ store, user }: { store: StoreDetail; user: AccessSubject 
           {toApprove.map((m) => (
             <li key={m.id}>
               <Link href={`/stores/${store.id}/modules/${m.moduleType}`} className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-950 hover:bg-amber-100">
-                <ClipboardCheck className="size-3.5" aria-hidden /> Approve: {m.step}. {m.displayName}
+                <ClipboardCheck className="size-3.5" aria-hidden /> Approve: {m.code} · {m.displayName}
                 {m.approverTeam ? ` (as ${teamLabel(m.approverTeam)})` : ""}
+              </Link>
+            </li>
+          ))}
+          {toRecord.map(({ m, a }) => (
+            <li key={`${m.id}-${a.key}`}>
+              <Link href={`/stores/${store.id}/modules/${m.moduleType}`} className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-950 hover:bg-sky-200">
+                <Zap className="size-3.5" aria-hidden /> Record: {a.label}
               </Link>
             </li>
           ))}
           {list.map((m) => (
             <li key={m.id}>
               <Link href={`/stores/${store.id}/modules/${m.moduleType}`} className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-xs font-medium hover:bg-accent">
-                {m.step}. {m.displayName}
+                {m.code} · {m.displayName}
                 {m.approvalStatus === "REJECTED" ? " — sent back" : m.status === "NOT_STARTED" ? " — ready to start" : ""}
               </Link>
             </li>

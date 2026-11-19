@@ -1,43 +1,38 @@
+import { Ban, Check, CircleDashed, Clock, Loader } from "lucide-react";
 import Link from "next/link";
-import { MODULE_STATUS_LABELS } from "@/lib/status";
-import type { StoreSummary } from "@/lib/queries";
+import type { StageCell, StoreSummary } from "@/lib/queries";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { MODULE_SHORT_LABELS, MODULE_DEFINITIONS } from "@/modules";
-import { MODULE_STATUS_STYLE, StatusBadge } from "./status-badge";
+import { STAGE_COLUMNS } from "@/modules";
+import { StatusBadge } from "./status-badge";
 import { ProgressBar } from "./progress-bar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
-/** Store × step grid — one row per store, one coloured cell per launch step
- * (green done, yellow In Progress, red Blocked, grey Not Started, red outline when overdue,
- * blue dot when waiting for approval). Steps 1–5, then the eight step-6 department tracks. */
-export function StoreGrid({ stores, names }: { stores: StoreSummary[]; names: Record<string, string> }) {
-  const columns = MODULE_DEFINITIONS.map((m) => m.moduleType);
-  const preCount = MODULE_DEFINITIONS.filter((m) => m.step < 6).length;
+const CELL: Record<StageCell["state"], { cls: string; Icon: typeof Check; text: string }> = {
+  done: { cls: "bg-status-completed text-white", Icon: Check, text: "Done" },
+  progress: { cls: "bg-status-progress text-amber-950", Icon: Loader, text: "In progress" },
+  pending: { cls: "bg-sky-500 text-white", Icon: Clock, text: "Waiting for approval / a record" },
+  blocked: { cls: "bg-status-blocked text-white", Icon: Ban, text: "Blocked" },
+  notstarted: { cls: "bg-status-notstarted text-slate-600", Icon: CircleDashed, text: "Not started" },
+};
+
+/** Store × SOP stage grid — one row per store, one cell per stage (1, 2, 3, 4, T-7, 5, 6 on site,
+ * 6 departments, 7). Stages with several steps show "done of total". Red outline = overdue. */
+export function StoreGrid({ stores }: { stores: StoreSummary[]; names?: Record<string, string> }) {
   return (
     <div className="overflow-x-auto rounded-lg border bg-card shadow-xs">
-      <table className="w-full min-w-[1200px] text-sm">
+      <table className="w-full min-w-[1050px] text-sm">
         <thead>
-          <tr className="bg-muted/50 text-[11px] text-muted-foreground">
-            <th colSpan={3} />
-            <th colSpan={preCount} className="border-x px-1 pt-2 text-center font-medium">
-              Steps 1–5
-            </th>
-            <th colSpan={columns.length - preCount} className="px-1 pt-2 text-center font-medium">
-              6 · Store setup (departments)
-            </th>
-            <th />
-          </tr>
           <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
             <th className="sticky left-0 z-10 min-w-60 bg-muted/95 px-4 py-2.5 font-medium">Store</th>
             <th className="px-3 py-2.5 font-medium">Status</th>
             <th className="px-3 py-2.5 font-medium">Progress</th>
-            {columns.map((c) => (
-              <th key={c} className="px-0.5 py-2.5 text-center text-[11px] leading-tight font-medium" title={names[c]}>
-                {MODULE_SHORT_LABELS[c] ?? c}
+            {STAGE_COLUMNS.map((c) => (
+              <th key={c.key} className="px-1 py-2.5 text-center text-[11px] leading-tight font-medium" title={c.title}>
+                {c.label}
               </th>
             ))}
-            <th className="px-3 py-2.5 font-medium">7 · Soft launch</th>
+            <th className="px-3 py-2.5 font-medium">Keys · launch</th>
           </tr>
         </thead>
         <tbody>
@@ -48,7 +43,10 @@ export function StoreGrid({ stores, names }: { stores: StoreSummary[]; names: Re
                   {s.name}
                 </Link>
                 <span className="font-mono text-[11px] text-muted-foreground">{s.storeCode}</span>
-                <span className="text-[11px] text-muted-foreground"> · {s.city} · {s.ownerName}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  {" "}
+                  · {s.city} · {s.ownerName}
+                </span>
               </td>
               <td className="px-3 py-2.5">
                 <StatusBadge status={s.overallStatus} />
@@ -59,27 +57,28 @@ export function StoreGrid({ stores, names }: { stores: StoreSummary[]; names: Re
                 </div>
                 <ProgressBar value={s.progressPercent} label={`${s.name} progress`} />
               </td>
-              {columns.map((type) => {
-                const c = s.cells.find((x) => x.moduleType === type);
-                if (!c) return <td key={type} />;
-                const pending = c.status === "COMPLETED" && c.approvalStatus === "PENDING";
-                const st = MODULE_STATUS_STYLE[pending ? "IN_PROGRESS" : c.status];
-                const label = `${names[type] ?? type}: ${pending ? "Completed — awaiting approval" : c.status === "COMPLETED" ? "Done" : MODULE_STATUS_LABELS[c.status]}${c.approvalStatus === "REJECTED" && c.status !== "COMPLETED" ? " — sent back" : ""}${c.overdue ? ` — ${c.daysOverdue} days overdue` : ""}`;
+              {STAGE_COLUMNS.map((c) => {
+                const cell = s.stages.find((x) => x.key === c.key);
+                if (!cell || cell.total === 0) return <td key={c.key} />;
+                const st = CELL[cell.state];
+                const label = `${c.title}: ${st.text}${cell.total > 1 ? ` (${cell.done} of ${cell.total} done)` : ""}${cell.overdue ? ` — ${cell.overdue} overdue` : ""}`;
+                const href = cell.firstOpen ? `/stores/${s.id}/modules/${cell.firstOpen}` : `/stores/${s.id}`;
                 return (
-                  <td key={type} className="px-1 py-2.5 text-center">
+                  <td key={c.key} className="px-1 py-2.5 text-center">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Link
-                          href={`/stores/${s.id}/modules/${type}`}
+                          href={href}
                           aria-label={`${s.name} — ${label}`}
-                          className={cn(
-                            "relative mx-auto grid h-7 w-10 place-items-center rounded",
-                            st.cell,
-                            c.overdue && "ring-2 ring-status-blocked ring-offset-1",
-                          )}
+                          className={cn("relative mx-auto grid h-7 w-12 place-items-center rounded text-[11px] font-semibold tabular-nums", st.cls, cell.overdue > 0 && "ring-2 ring-status-blocked ring-offset-1")}
                         >
-                          <st.Icon className="size-3.5" aria-hidden />
-                          {pending && <span className="absolute -top-1 -right-1 size-2.5 rounded-full bg-sky-500 ring-2 ring-card" aria-hidden />}
+                          {cell.total > 1 && cell.state !== "done" ? (
+                            <span>
+                              {cell.done}/{cell.total}
+                            </span>
+                          ) : (
+                            <st.Icon className="size-3.5" aria-hidden />
+                          )}
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent>{label}</TooltipContent>
@@ -91,7 +90,10 @@ export function StoreGrid({ stores, names }: { stores: StoreSummary[]; names: Re
                 {s.actualLaunchDate ? (
                   <span className="font-medium text-emerald-700">Launched {formatDate(s.actualLaunchDate)}</span>
                 ) : (
-                  <span>Target {formatDate(s.targetLaunchDate)}</span>
+                  <span className="block">
+                    {s.keyHandoverDate ? `Keys ${formatDate(s.keyHandoverDate)}` : s.expectedKeyDate ? `Keys exp. ${formatDate(s.expectedKeyDate)}` : "Keys: date not set yet"}
+                    <span className="block text-muted-foreground">Target {formatDate(s.targetLaunchDate)}</span>
+                  </span>
                 )}
               </td>
             </tr>
@@ -112,14 +114,12 @@ export function GridLegend() {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
       {item("bg-status-completed", "Done")}
-      {item("bg-status-progress", "In Progress")}
+      {item("bg-status-progress", "In progress")}
+      {item("bg-sky-500", "Waiting for approval / record")}
       {item("bg-status-blocked", "Blocked")}
-      {item("bg-status-notstarted", "Not Started")}
+      {item("bg-status-notstarted", "Not started")}
       {item("bg-status-notstarted ring-2 ring-status-blocked", "Overdue")}
-      <span className="flex items-center gap-1.5">
-        <span className="inline-block size-2.5 rounded-full bg-sky-500" aria-hidden />
-        Awaiting approval
-      </span>
+      <span>“2/5” = steps done in that stage</span>
     </div>
   );
 }

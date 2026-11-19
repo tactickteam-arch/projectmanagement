@@ -3,7 +3,7 @@ import { handle, readJson } from "@/lib/api";
 import { requireApiUser } from "@/lib/auth/dal";
 import { recordAfterApproval } from "@/lib/services/modules";
 
-/** POST /api/modules/:id/after-approval — { value }: e.g. the APX PO number after Token advance is approved. */
+/** POST /api/modules/:id/after-approval — { action, values }: HO records the token advance payment, Accounts / Purchase the APX PO. */
 export async function POST(request: Request, ctx: RouteContext<"/api/modules/[id]/after-approval">) {
   return handle(async () => {
     const user = await requireApiUser();

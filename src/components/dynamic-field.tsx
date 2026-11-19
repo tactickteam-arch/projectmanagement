@@ -31,19 +31,83 @@ export function DynamicField({
   const id = `${idPrefix}-${field.key}`;
   const label = (
     <Label htmlFor={id} className="text-sm">
+      {field.sr !== undefined && <span className="mr-1 font-mono text-xs text-muted-foreground">{field.sr}.</span>}
       {field.label}
       {field.unit && <span className="font-normal text-muted-foreground"> ({field.unit})</span>}
+      {field.required && field.type !== "task" && (
+        <span className="text-destructive" aria-label="required">
+          {" "}
+          *
+        </span>
+      )}
     </Label>
   );
-  const err = error && <p className="text-xs text-destructive">{error}</p>;
+  const help = field.help && field.type !== "task" && <p className="text-xs text-muted-foreground">{field.help}</p>;
+  const err = (
+    <>
+      {help}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </>
+  );
+
+  if (field.fromStore) {
+    const shown = value === null || value === undefined || value === "" ? "—" : typeof value === "number" ? value.toLocaleString("en-IN") : String(value);
+    return (
+      <div className={`space-y-1.5 ${field.type === "longtext" ? "sm:col-span-2" : ""}`}>
+        {label}
+        <p id={id} className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-sm">
+          {shown}
+        </p>
+        <p className="text-xs text-muted-foreground">From Store info{shown === "—" ? " — add it there" : ""}.</p>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    );
+  }
+  if (value === "•••• hidden") {
+    return (
+      <div className="space-y-1.5">
+        {label}
+        <p id={id} className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Hidden — visible to Accounts, HO, Legal, Boss + CEO and this step&apos;s team
+        </p>
+      </div>
+    );
+  }
 
   switch (field.type) {
     case "text":
     case "phone":
+    case "email":
       return (
         <div className="space-y-1.5">
           {label}
-          <Input id={id} type={field.type === "phone" ? "tel" : "text"} value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+          <Input
+            id={id}
+            type={field.type === "phone" ? "tel" : field.type === "email" ? "email" : "text"}
+            inputMode={field.type === "phone" ? "tel" : field.type === "email" ? "email" : undefined}
+            autoCapitalize={field.pattern && field.type === "text" ? "characters" : undefined}
+            value={(value as string) ?? ""}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+            aria-invalid={!!error}
+          />
+          {err}
+        </div>
+      );
+    case "aadhaar":
+      return (
+        <div className="space-y-1.5">
+          {label}
+          <Input
+            id={id}
+            inputMode="numeric"
+            placeholder="12-digit Aadhaar number"
+            value={(value as string) ?? ""}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+            aria-invalid={!!error}
+            autoComplete="off"
+          />
           {err}
         </div>
       );
@@ -91,8 +155,8 @@ export function DynamicField({
     case "yesno":
       return (
         <div className="space-y-1.5">
-          <span className="text-sm font-medium">{field.label}</span>
-          <div className="flex gap-2" role="radiogroup" aria-label={field.label}>
+          {label}
+          <div id={id} className="flex gap-2" role="radiogroup" aria-label={field.label}>
             {[
               { v: true, t: "Yes" },
               { v: false, t: "No" },
@@ -136,9 +200,10 @@ export function DynamicField({
       return (
         <label htmlFor={id} className={`flex min-h-10 cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-accent/60 ${disabled ? "cursor-default opacity-80" : ""}`}>
           <Checkbox id={id} checked={value === true} onCheckedChange={(c) => onChange(c === true)} disabled={disabled} className="size-5" />
-          <span className={`flex-1 text-sm ${value === true ? "text-muted-foreground line-through decoration-muted-foreground/40" : ""}`}>
-            {field.label}
-            {field.owner && <span className="ml-2 text-xs text-muted-foreground no-underline">{field.owner}</span>}
+          <span className="flex-1 text-sm">
+            <span className={value === true ? "text-muted-foreground line-through decoration-muted-foreground/40" : ""}>{field.label}</span>
+            {field.owner && <span className="ml-2 text-xs text-muted-foreground">{field.owner}</span>}
+            {field.help && <span className="block text-xs text-muted-foreground">{field.help}</span>}
           </span>
           {error && <span className="text-xs text-destructive">{error}</span>}
         </label>
@@ -158,7 +223,10 @@ function MultiSelect({ field, value, onChange, disabled, error }: { field: Field
   const extras = value.filter((v) => !(field.options ?? []).includes(v));
   return (
     <div className="space-y-1.5 sm:col-span-2">
-      <span className="text-sm font-medium">{field.label}</span>
+      <span className="text-sm font-medium">
+        {field.label}
+        {field.required && <span className="text-destructive"> *</span>}
+      </span>
       <div className="flex flex-wrap gap-2">
         {(field.options ?? []).map((o) => (
           <button

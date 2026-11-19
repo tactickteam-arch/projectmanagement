@@ -4,11 +4,12 @@ import type { Prisma } from "@/generated/prisma/client";
 import { diff, logActivity } from "@/lib/activity";
 import type { CurrentUser } from "@/lib/auth/dal";
 import { can } from "@/lib/auth/permissions";
-import { parseDateOnly } from "@/lib/dates";
+import { parseDateOnly, todayInIndia } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { badRequest, conflict, forbidden, notFound } from "@/lib/errors";
 import { isStateCode } from "@/lib/india-states";
 import { hqRecipients, notifyUsers, teamRecipients } from "@/lib/notify";
+import { defaultExpectedKey, planFrom, rolloutTarget } from "@/lib/scheduling";
 import { computeOverallStatus, OVERALL_STATUS_LABELS } from "@/lib/status";
 import { formatStoreCode, serialFromCode } from "@/lib/store-code";
 
@@ -48,10 +49,10 @@ export const CreateStoreInput = z.object({
   ownerId: z.uuid().optional(),
 });
 
+/** The soft launch date is recorded by the Stage 7 step, the key handover date by RK's approval. */
 export const UpdateStoreInput = z.object({
   ...masterFields,
   name: masterFields.name.optional(),
-  actualLaunchDate: optionalDate,
 }).partial();
 
 /** Loads a store the user may see, or throws 404 (never reveals other stores exist). */
@@ -76,6 +77,10 @@ export async function createStore(user: CurrentUser, raw: unknown) {
 
   const templates = await prisma.moduleTemplate.findMany({ orderBy: { sortOrder: "asc" } });
   if (templates.length === 0) throw conflict("Module templates are missing. Run the database seed.");
+  // 13-week chart (slide 10): week 1 starts today; keys planned for week 8 until the MOU sheet
+  // gives the expected date; soft launch in week 13.
+  const day1 = todayInIndia();
+  const plans = new Map([...planFrom("created", day1, templates), ...planFrom("expectedKey", defaultExpectedKey(day1), templates)].map((p) => [p.moduleType, p]));
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -96,9 +101,16 @@ export async function createStore(user: CurrentUser, raw: unknown) {
             storeType: input.storeType ?? null,
             carpetAreaSqft: input.carpetAreaSqft ?? null,
             floor: input.floor ?? null,
-            targetLaunchDate: input.targetLaunchDate,
+            targetLaunchDate: input.targetLaunchDate ?? rolloutTarget(day1),
             ownerId,
-            modules: { create: templates.map((t) => ({ moduleType: t.moduleType, updatedById: user.id })) },
+            modules: {
+              create: templates.map((t) => ({
+                moduleType: t.moduleType,
+                updatedById: user.id,
+                plannedStart: plans.get(t.moduleType)?.plannedStart ?? null,
+                plannedEnd: plans.get(t.moduleType)?.plannedEnd ?? null,
+              })),
+            },
           },
         });
         await logActivity(tx, { userId: user.id, storeId: store.id, action: "store.created", newValue: { storeCode: store.storeCode, name: store.name } });
@@ -120,14 +132,6 @@ export async function updateStore(user: CurrentUser, storeId: string, raw: unkno
   const store = await getStoreForUser(user, storeId);
   if (!can.editStoreMaster(user, store)) throw forbidden();
   const input = UpdateStoreInput.parse(raw);
-
-  if (input.actualLaunchDate !== undefined && input.actualLaunchDate !== null && store.actualLaunchDate === null) {
-    if (store.overallStatus !== "READY_FOR_LAUNCH") {
-      throw badRequest("The soft launch date can be entered once every department is green (all steps done).", {
-        actualLaunchDate: "Not every step is done yet",
-      });
-    }
-  }
 
   const data = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as Prisma.StoreUpdateInput;
   return prisma.$transaction(async (tx) => {
@@ -182,7 +186,7 @@ export async function reassignOwner(user: CurrentUser, storeId: string, raw: unk
 /** Recomputes overall status from step states; notifies HQ and Sales when every department is green. */
 export async function recalcStoreStatus(tx: Tx, storeId: string, userId: string | null, opts: { force?: boolean } = {}) {
   const store = await tx.store.findUniqueOrThrow({ where: { id: storeId } });
-  const modules = await tx.storeModule.findMany({ where: { storeId }, select: { moduleType: true, status: true, approvalStatus: true } });
+  const modules = await tx.storeModule.findMany({ where: { storeId }, select: { moduleType: true, status: true, approvalStatus: true, details: true } });
   const next = computeOverallStatus(opts.force ? { ...store, overallStatus: null } : store, modules);
   if (next === store.overallStatus && !opts.force) return next;
   await tx.store.update({ where: { id: storeId }, data: { overallStatus: next } });

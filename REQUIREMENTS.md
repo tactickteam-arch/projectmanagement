@@ -1,10 +1,10 @@
 # Requirements Tracker — Sangeetha Mobiles Store Launch Tracker
 
-**Source of truth:** *Sangeetha Mobiles – Store Launch Tracker: Project Spec* (11 Nov 2026, PDF).
+**Source of truth (from 18 Nov 2026):** `Sangeetha_New_Outlet_Launch_SOP_v2.pptx` — see D7. Before that: *Sangeetha Mobiles – Store Launch Tracker: Project Spec* (11 Nov 2026, PDF).
 It **replaces** the earlier *New Store Setup Management System* spec (10 Nov) and all decisions made against it (owner decision, 11 Nov 2026).
 
 Labels: **CONFIRMED** (spec or owner decision) · **PROPOSED** (needs approval) · **OPEN** (question outstanding).
-Last updated: 17 Nov 2026
+Last updated: 18 Nov 2026
 
 ---
 
@@ -18,10 +18,25 @@ Last updated: 17 Nov 2026
 | D4 | 11 Nov | Regional Manager role included in the schema now; who may approve is still open (Q3). |
 | D5 | 11 Nov | Prisma 7.10.1 (latest stable; 8.0 is a release candidate), Next.js 16.4.3, custom JWT sessions as per spec. |
 | D6 | 17 Nov | The *New outlet launch: user flow* diagram replaces the spec's 7 modules + Key Handover. There are now 13 steps: 1 Location filing, 2 8-point landlord check, 3 Token advance (+ APX PO), 4 Legal agreement and statutory, 5 Key received, 6 eight parallel department tracks, then 7 Soft launch. Each step has teams that fill it in and an optional approver team (Boss + CEO, RK, Accounts). New role "Sangeetha team" with teams. The open points are in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) #1–17. |
+| D7 | 18 Nov | Start fresh from the **New Outlet Launch SOP v2** deck (11 slides), keeping login, users, the database and the live site. 21 steps: stages 1–5, the interiors quotation, the T-7 sign board and material ordering, 4 on-site steps, 8 department tracks and the soft launch. Automatic SOP checks: power load, AC sizing, the T-7 rule, mandatory MOU points and documents, KYC formats and hiding. HO payment gates "Token paid". 13-week schedule, T-7 alert and weekly RAG. New teams: HO, ASM, BH. Open points: [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). |
 
 ---
 
-## Launch flow (17 Nov) — implemented and tested
+## SOP v2 (18 Nov) — implemented and tested
+
+| Item | Where | Tested how |
+|---|---|---|
+| 21 SOP steps as config (stage, code, teams, approver, prerequisites, "complete after", checks, after-approval records, schedule anchor) | `src/modules/*.ts` | Unit tests; E2E |
+| 41-point MOU sheet with sections, store-sourced points, formats (PAN, IFSC, GSTIN, account, phone, e-mail), Aadhaar last-4 only, required documents | `src/modules/location-filing.ts`, `src/lib/module-rules.ts` | Unit tests; E2E |
+| KYC hidden from teams that don't need it | `can.viewSensitive`, `src/lib/queries.ts` | E2E: Marketing vs Accounts, API and page |
+| Power load (slide 4), AC sizing (slide 8), T-7 rule (slide 6) block completion and approval | `src/lib/sop-rules.ts`, `sopCheckErrors` | Unit tests; E2E |
+| HO payment (gate) and APX PO after Accounts approves the token advance | `afterApproval` in `token-advance.ts`, `recordAfterApproval` | E2E |
+| 13-week schedule from store creation, expected keys (MOU point 11) and Day 0 | `src/lib/scheduling.ts`, `steps-sync.ts` | Unit tests; E2E |
+| Intimation on location approval, Day 0 notices, T-7 alert, daily delays, weekly RAG to the slide 11 teams | `src/lib/services/modules.ts`, `notifications.ts` | E2E + local database check |
+| SOP flow page, store × stage grid, Weekly RAG page + Excel | `launch-flow.tsx`, `store-grid.tsx`, `hq/reports/rag` | E2E: every page for every partner; screenshots |
+
+## Launch flow (17 Nov) — superseded by D7
+
 
 | Item | Where | Tested how |
 |---|---|---|
