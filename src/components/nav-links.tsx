@@ -10,6 +10,8 @@ export interface NavItem {
   label: string;
   icon: ReactNode;
   exact?: boolean;
+  /** Count shown next to the label (e.g. approvals waiting). */
+  badge?: number;
 }
 
 export function NavLinks({ items, variant, onNavigate }: { items: NavItem[]; variant: "sidebar" | "top" | "bottom" | "sheet"; onNavigate?: () => void }) {
@@ -53,6 +55,11 @@ export function NavLinks({ items, variant, onNavigate }: { items: NavItem[]; var
         >
           {i.icon}
           {i.label}
+          {!!i.badge && (
+            <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground" aria-label={`${i.badge} waiting`}>
+              {i.badge > 99 ? "99+" : i.badge}
+            </span>
+          )}
         </Link>
       ))}
     </>

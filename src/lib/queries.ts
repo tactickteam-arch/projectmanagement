@@ -412,6 +412,18 @@ export type ModuleView = StoreDetail["modules"][number];
 
 /** Approvals queue: Completed steps waiting for approval, oldest first. SuperAdmin sees every step;
  * other users see the steps their teams approve (Boss + CEO, RK, Accounts). */
+/** For the menu: can this user approve any step, and how many approvals are waiting for them? */
+export async function approvalsBadge(user: AccessSubject): Promise<{ canApprove: boolean; count: number }> {
+  if (user.role === "STORE_OWNER") return { canApprove: false, count: 0 };
+  const templates = await prisma.moduleTemplate.findMany({ select: { moduleType: true, approverTeam: true } });
+  const approvable = templates
+    .filter((t) => MODULE_TYPES.includes(t.moduleType) && (user.role === "SUPER_ADMIN" || (t.approverTeam !== null && (user.teams ?? []).includes(t.approverTeam))))
+    .map((t) => t.moduleType);
+  if (approvable.length === 0) return { canApprove: false, count: 0 };
+  const count = await prisma.storeModule.count({ where: { status: "COMPLETED", approvalStatus: "PENDING", moduleType: { in: approvable }, store: storeScope(user) } });
+  return { canApprove: true, count };
+}
+
 export async function approvalsQueue(user: AccessSubject) {
   const templates = await prisma.moduleTemplate.findMany({ select: { moduleType: true, displayName: true, approverTeam: true } });
   const approvable = templates

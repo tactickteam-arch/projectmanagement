@@ -8,7 +8,7 @@ import { NavLinks, type NavItem } from "./nav-links";
 import { MobileNav } from "./mobile-nav";
 import { UserMenu } from "./user-menu";
 
-function navFor(user: CurrentUser): NavItem[] {
+function navFor(user: CurrentUser, approvals: { canApprove: boolean; count: number }): NavItem[] {
   if (user.role === "STORE_OWNER") {
     return [
       { href: "/owner", label: "My stores", icon: <Store className="size-4" /> },
@@ -19,7 +19,7 @@ function navFor(user: CurrentUser): NavItem[] {
   const items: NavItem[] = [
     ...(user.teams.length ? [{ href: "/tasks", label: "My tasks", icon: <ListTodo className="size-4" /> }] : []),
     { href: "/hq", label: "Dashboard", icon: <LayoutDashboard className="size-4" />, exact: true },
-    { href: "/hq/approvals", label: "Approvals", icon: <ClipboardCheck className="size-4" /> },
+    ...(approvals.canApprove ? [{ href: "/hq/approvals", label: "Approvals", icon: <ClipboardCheck className="size-4" />, badge: approvals.count }] : []),
     { href: "/hq/reports/rag", label: "Weekly RAG", icon: <TrafficCone className="size-4" /> },
     { href: "/hq/reports/delays", label: "Delays report", icon: <Clock className="size-4" /> },
     { href: "/hq/reports/costs", label: "Cost report", icon: <IndianRupee className="size-4" /> },
@@ -61,8 +61,8 @@ function Bellink({ unread }: { unread: number }) {
 }
 
 /** HQ: dark sidebar (desktop-first). Store owner: compact top bar + bottom tabs (mobile-first). */
-export function AppShell({ user, unread, children }: { user: CurrentUser; unread: number; children: ReactNode }) {
-  const nav = navFor(user);
+export function AppShell({ user, unread, approvals, children }: { user: CurrentUser; unread: number; approvals: { canApprove: boolean; count: number }; children: ReactNode }) {
+  const nav = navFor(user, approvals);
   const roleLabel =
     (user.role === "TEAM_MEMBER" && user.teams.length ? teamsLabel(user.teams) : ROLE_LABELS[user.role] + (user.teams.length ? ` · ${teamsLabel(user.teams)}` : "")) +
     ((user.role === "REGIONAL_MANAGER" || user.role === "TEAM_MEMBER") && user.regionStates.length ? ` · ${user.regionStates.join(", ")}` : "");

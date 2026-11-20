@@ -136,7 +136,7 @@ export function Uploader({
                   </span>
                 )}
               </a>
-              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{formatBytes(f.sizeBytes)}</p>
+              <p className="mt-0.5 truncate text-[10px] text-muted-foreground" title={f.fileName}>{f.fileType.startsWith("image/") ? `${f.fileName} · ` : ""}{formatBytes(f.sizeBytes)}</p>
               {canEdit && (
                 <button
                   type="button"
