@@ -24,7 +24,7 @@ import { planFrom, rolloutTarget } from "@/lib/scheduling";
 import { getStoreForUser, recalcStoreStatus } from "@/lib/services/stores";
 import { getTargetLaunchOffsetDays } from "@/lib/settings";
 import { isApproved, isDone, MODULE_STATUS_LABELS } from "@/lib/status";
-import { TEAM_KEYS, teamLabel, teamsLabel } from "@/lib/teams";
+import { HIDDEN_VALUE, TEAM_KEYS, teamLabel, teamsLabel } from "@/lib/teams";
 import { AFTER_KEY_TYPES, getModuleDefinition, KEY_HANDOVER, LOCATION_FILING, MODULE_DEFINITIONS, SOFT_LAUNCH } from "@/modules";
 import type { FieldDef, StoreSource } from "@/modules/types";
 
@@ -155,6 +155,8 @@ export async function updateModule(user: CurrentUser, storeId: string, moduleTyp
 
   let details: Record<string, unknown> = (mod.details ?? {}) as Record<string, unknown>;
   if (input.details) {
+    // KYC values the user may not see come back as the "hidden" marker: keep what is stored.
+    for (const f of fields) if (f.sensitive && input.details[f.key] === HIDDEN_VALUE) delete input.details[f.key];
     const parsed = detailsSchema(fields).safeParse(input.details);
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};

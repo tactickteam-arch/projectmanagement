@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { requirePageUser } from "@/lib/auth/dal";
 import { formatDate } from "@/lib/format";
 import { approvalsBadge, approvalsQueue, myTasks } from "@/lib/queries";
-import { teamLabel, teamsLabel } from "@/lib/teams";
+import { departmentsOf, teamLabel, teamsLabel } from "@/lib/teams";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "My tasks" };
@@ -25,7 +25,7 @@ export default async function TasksPage() {
     <>
       <PageHeader
         title="My tasks"
-        description={user.teams.length ? `Launch steps for ${teamsLabel(user.teams)}, across the stores you can see.` : "You are not in a team yet. Ask HQ to add you to one in Settings."}
+        description={departmentsOf(user.teams).length ? `Launch steps for ${teamsLabel(user.teams)}, across the stores you can see.` : "You are not in a team yet. Ask HQ to add you to one in Settings."}
       />
 
       {myApprovals.length > 0 && (

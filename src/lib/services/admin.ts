@@ -8,11 +8,11 @@ import { prisma } from "@/lib/db";
 import { badRequest, conflict, forbidden, notFound } from "@/lib/errors";
 import { isStateCode } from "@/lib/india-states";
 import { setSetting, SETTING_KEYS } from "@/lib/settings";
-import { isTeamKey, STORE_OWNER_TEAM } from "@/lib/teams";
+import { isPermissionKey, isTeamKey, STORE_OWNER_TEAM } from "@/lib/teams";
 import type { FieldDef } from "@/modules/types";
 
 const password = z.string().min(8, "Password must be at least 8 characters").max(200);
-const teams = z.array(z.string().refine(isTeamKey, "Unknown team")).max(20);
+const teams = z.array(z.string().refine((k) => isTeamKey(k) || isPermissionKey(k), "Unknown team")).max(20);
 
 export const CreateUserInput = z.object({
   name: z.string().trim().min(2, "Name is required").max(120),

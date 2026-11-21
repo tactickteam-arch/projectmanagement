@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { api, ApiError } from "@/lib/client-api";
 import { INDIA_STATES } from "@/lib/india-states";
-import { STORE_OWNER_TEAM, TEAM_KEYS, teamLabel, teamsLabel } from "@/lib/teams";
+import { PERMISSION_KEYS, STORE_OWNER_TEAM, TEAM_KEYS, teamLabel } from "@/lib/teams";
 
 const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: "SuperAdmin (HQ)", REGIONAL_MANAGER: "Regional Manager", STORE_OWNER: "Store Owner", TEAM_MEMBER: "Sangeetha team" };
 
@@ -73,7 +73,7 @@ export function UsersPanel({ users, currentUserId }: { users: UserRow[]; current
                 </td>
                 <td className="px-4 py-2.5">
                   {ROLE_LABEL[u.role] ?? u.role}
-                  {u.teams.length > 0 && <p className="text-xs text-muted-foreground">{teamsLabel(u.teams)}</p>}
+                  {u.teams.length > 0 && <p className="text-xs text-muted-foreground">{u.teams.map(teamLabel).join(", ")}</p>}
                 </td>
                 <td className="px-4 py-2.5 text-muted-foreground">
                   {u.role === "STORE_OWNER"
@@ -183,7 +183,7 @@ function CreateUserDialog() {
           {role !== "STORE_OWNER" && (
             <div className="space-y-1.5">
               <Label>Teams{role === "TEAM_MEMBER" ? " (at least one)" : " (optional)"}</Label>
-              <TeamPicker value={teams} onChange={setTeams} />
+              <TeamPicker value={teams} onChange={setTeams} withRights />
               {errors.teams && <p className="text-xs text-destructive">{errors.teams}</p>}
             </div>
           )}
@@ -223,21 +223,28 @@ function CreateUserDialog() {
   );
 }
 
-function TeamPicker({ value, onChange, includeOwner }: { value: string[]; onChange: (v: string[]) => void; includeOwner?: boolean }) {
+function TeamPicker({ value, onChange, includeOwner, withRights }: { value: string[]; onChange: (v: string[]) => void; includeOwner?: boolean; withRights?: boolean }) {
   const keys = includeOwner ? [STORE_OWNER_TEAM, ...TEAM_KEYS] : TEAM_KEYS;
+  const chip = (t: string) => (
+    <button
+      key={t}
+      type="button"
+      aria-pressed={value.includes(t)}
+      onClick={() => onChange(value.includes(t) ? value.filter((x) => x !== t) : [...value, t])}
+      className={`rounded-full border px-2 py-0.5 text-xs ${value.includes(t) ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"}`}
+    >
+      {teamLabel(t)}
+    </button>
+  );
   return (
-    <div className="flex flex-wrap gap-1.5 rounded-md border p-2">
-      {keys.map((t) => (
-        <button
-          key={t}
-          type="button"
-          aria-pressed={value.includes(t)}
-          onClick={() => onChange(value.includes(t) ? value.filter((x) => x !== t) : [...value, t])}
-          className={`rounded-full border px-2 py-0.5 text-xs ${value.includes(t) ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent"}`}
-        >
-          {teamLabel(t)}
-        </button>
-      ))}
+    <div className="space-y-2 rounded-md border p-2">
+      <div className="flex flex-wrap gap-1.5">{keys.map(chip)}</div>
+      {withRights && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t pt-2">
+          <span className="text-xs text-muted-foreground">Extra rights:</span>
+          {PERMISSION_KEYS.map(chip)}
+        </div>
+      )}
     </div>
   );
 }
@@ -275,7 +282,7 @@ function TeamsDialog({ user }: { user: UserRow }) {
           <DialogTitle>Teams for {user.name}</DialogTitle>
           <DialogDescription>Teams decide which launch steps this person fills in and approves (see Steps &amp; approvals).</DialogDescription>
         </DialogHeader>
-        <TeamPicker value={teams} onChange={setTeams} />
+        <TeamPicker value={teams} onChange={setTeams} withRights />
         {user.role === "TEAM_MEMBER" && (
           <div className="space-y-1.5">
             <Label>Region (states) — leave empty for all India</Label>

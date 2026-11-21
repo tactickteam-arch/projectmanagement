@@ -1,9 +1,8 @@
-import { AlertTriangle, ChevronRight, KeyRound, Plus, Store } from "lucide-react";
+import { AlertTriangle, ChevronRight, KeyRound, Store } from "lucide-react";
 import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/page-header";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatusBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
 import { requirePageUser } from "@/lib/auth/dal";
 import { formatDate } from "@/lib/format";
 import { stateName } from "@/lib/india-states";
@@ -20,20 +19,10 @@ export default async function OwnerHome() {
       <PageHeader
         title="My stores"
         description={`${stores.length} store${stores.length === 1 ? "" : "s"} assigned to you`}
-        actions={
-          <Button asChild size="sm" className="hidden md:inline-flex">
-            <Link href="/stores/new">
-              <Plus className="size-4" /> Add store
-            </Link>
-          </Button>
-        }
       />
       {stores.length === 0 ? (
         <EmptyState icon={<Store className="size-8" />} title="No stores yet">
-          <Link href="/stores/new" className="text-primary underline">
-            Add your first store
-          </Link>{" "}
-          to start tracking its setup.
+          New stores are added by Manju or RK. Stores assigned to you will show here.
         </EmptyState>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">

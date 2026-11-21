@@ -25,12 +25,31 @@ export const TEAMS = {
 export type TeamKey = keyof typeof TEAMS;
 export const TEAM_KEYS = Object.keys(TEAMS) as TeamKey[];
 
+/** Extra rights kept in a user's teams list. They are not departments: they fill in and approve no step. */
+export const PERMISSIONS = {
+  STORE_CREATOR: "Can create new stores",
+} as const;
+export type PermissionKey = keyof typeof PERMISSIONS;
+export const PERMISSION_KEYS = Object.keys(PERMISSIONS) as PermissionKey[];
+export function isPermissionKey(k: string): k is PermissionKey {
+  return k in PERMISSIONS;
+}
+/** The user's departments, without extra rights such as "Can create new stores". */
+export function departmentsOf(keys: readonly string[]): string[] {
+  return keys.filter((k) => !isPermissionKey(k));
+}
+/** Shown instead of a KYC value to users who may not see it. */
+export const HIDDEN_VALUE = "•••• hidden";
+/** Who creates a new store in the app: the people HQ marks "Can create new stores" (Manju and RK). */
+export const STORE_CREATOR = "STORE_CREATOR";
+
 /** Pseudo-team used in edit_teams: the store's assigned owner. */
 export const STORE_OWNER_TEAM = "STORE_OWNER";
 
-/** Teams that may see a landlord's KYC and bank details (they verify or pay against them —
- * SOP slide 5 "Accounts verifies commercial terms, KYC"; HO releases payments). */
-export const SENSITIVE_VIEW_TEAMS: readonly string[] = ["ACCOUNTS", "HO", "LEGAL", "LEADERSHIP"];
+/** Teams that may see a landlord's KYC and bank details (MOU points 31–35). Decided 21 Nov 2026:
+ * Accounts only (SOP slide 5 "Accounts verifies commercial terms, KYC"). Others who fill in step 1
+ * can enter or replace the values but not read them back. */
+export const SENSITIVE_VIEW_TEAMS: readonly string[] = ["ACCOUNTS"];
 
 /** SOP slide 11: the weekly RAG tracker is circulated to State Admin, ASM, SH/BH, Legal, Marketing and HO. */
 export const RAG_REPORT_TEAMS: readonly string[] = ["STATE_ADMIN", "ASM", "SALES", "BH", "LEGAL", "MARKETING", "HO"];
@@ -41,9 +60,10 @@ export function isTeamKey(k: string): k is TeamKey {
 
 export function teamLabel(k: string): string {
   if (k === STORE_OWNER_TEAM) return "Store owner";
+  if (isPermissionKey(k)) return PERMISSIONS[k];
   return isTeamKey(k) ? TEAMS[k] : k;
 }
 
 export function teamsLabel(keys: readonly string[]): string {
-  return keys.map(teamLabel).join(", ");
+  return keys.filter((k) => !isPermissionKey(k)).map(teamLabel).join(", ");
 }

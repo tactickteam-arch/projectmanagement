@@ -1,5 +1,6 @@
 import { Bell, ClipboardCheck, Clock, IndianRupee, LayoutDashboard, ListTodo, Map, Plus, Settings, Store, TrafficCone } from "lucide-react";
-import { teamsLabel } from "@/lib/teams";
+import { can } from "@/lib/auth/permissions";
+import { departmentsOf, teamsLabel } from "@/lib/teams";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ROLE_LABELS } from "@/lib/auth/access";
@@ -12,12 +13,11 @@ function navFor(user: CurrentUser, approvals: { canApprove: boolean; count: numb
   if (user.role === "STORE_OWNER") {
     return [
       { href: "/owner", label: "My stores", icon: <Store className="size-4" /> },
-      { href: "/stores/new", label: "Add store", icon: <Plus className="size-4" /> },
       { href: "/notifications", label: "Notifications", icon: <Bell className="size-4" /> },
     ];
   }
   const items: NavItem[] = [
-    ...(user.teams.length ? [{ href: "/tasks", label: "My tasks", icon: <ListTodo className="size-4" /> }] : []),
+    ...(departmentsOf(user.teams).length ? [{ href: "/tasks", label: "My tasks", icon: <ListTodo className="size-4" /> }] : []),
     { href: "/hq", label: "Dashboard", icon: <LayoutDashboard className="size-4" />, exact: true },
     ...(approvals.canApprove ? [{ href: "/hq/approvals", label: "Approvals", icon: <ClipboardCheck className="size-4" />, badge: approvals.count }] : []),
     { href: "/hq/reports/rag", label: "Weekly RAG", icon: <TrafficCone className="size-4" /> },
@@ -25,8 +25,8 @@ function navFor(user: CurrentUser, approvals: { canApprove: boolean; count: numb
     { href: "/hq/reports/costs", label: "Cost report", icon: <IndianRupee className="size-4" /> },
     { href: "/hq/map", label: "Map view", icon: <Map className="size-4" /> },
   ];
+  if (can.createStore(user)) items.push({ href: "/stores/new", label: "Add store", icon: <Plus className="size-4" /> });
   if (user.role === "SUPER_ADMIN") {
-    items.push({ href: "/stores/new", label: "Add store", icon: <Plus className="size-4" /> });
     items.push({ href: "/hq/settings", label: "Settings", icon: <Settings className="size-4" /> });
   }
   items.push({ href: "/notifications", label: "Notifications", icon: <Bell className="size-4" /> });
@@ -64,7 +64,9 @@ function Bellink({ unread }: { unread: number }) {
 export function AppShell({ user, unread, approvals, children }: { user: CurrentUser; unread: number; approvals: { canApprove: boolean; count: number }; children: ReactNode }) {
   const nav = navFor(user, approvals);
   const roleLabel =
-    (user.role === "TEAM_MEMBER" && user.teams.length ? teamsLabel(user.teams) : ROLE_LABELS[user.role] + (user.teams.length ? ` · ${teamsLabel(user.teams)}` : "")) +
+    (user.role === "TEAM_MEMBER" && departmentsOf(user.teams).length
+      ? teamsLabel(user.teams)
+      : ROLE_LABELS[user.role] + (departmentsOf(user.teams).length ? ` · ${teamsLabel(user.teams)}` : "")) +
     ((user.role === "REGIONAL_MANAGER" || user.role === "TEAM_MEMBER") && user.regionStates.length ? ` · ${user.regionStates.join(", ")}` : "");
 
   if (user.role === "STORE_OWNER") {

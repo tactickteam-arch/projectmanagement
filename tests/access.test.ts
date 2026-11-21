@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { canViewStore, storeScope } from "../src/lib/auth/access";
 import { can } from "../src/lib/auth/permissions";
-import { isTeamKey } from "../src/lib/teams";
+import { departmentsOf, isTeamKey, teamsLabel } from "../src/lib/teams";
 import { MODULE_DEFINITIONS } from "../src/modules";
 
 const kaStore = { ownerId: "owner-1", state: "KA" };
@@ -76,6 +76,33 @@ describe("step permissions (who fills in / approves)", () => {
     assert.equal(can.approveModule(accounts, kaStore, step("MARKETING")), false);
     assert.equal(can.editModule(hq, kaStore, step("MARKETING")), true);
     assert.equal(can.approveModule(hq, kaStore, step("LOCATION_FILING")), true);
+  });
+});
+
+describe("decisions of 21 Nov 2026", () => {
+  const member = (teams: string[]) => ({ id: "m", role: "TEAM_MEMBER" as const, regionStates: [], teams });
+
+  it("only people marked 'Can create new stores' (Manju, RK) and HQ create stores; store owners do not", () => {
+    assert.equal(can.createStore(member(["RK", "STORE_CREATOR"])), true);
+    assert.equal(can.createStore(member(["STORE_CREATOR"])), true);
+    assert.equal(can.createStore(member(["RK"])), false);
+    assert.equal(can.createStore(member(["STATE_ADMIN", "ASM"])), false);
+    assert.equal(can.createStore({ id: "hq", role: "SUPER_ADMIN" as const, regionStates: [] }), true);
+    assert.equal(can.createStore({ id: "owner-1", role: "STORE_OWNER" as const, regionStates: [], teams: ["STORE_CREATOR"] }), false);
+  });
+
+  it("landlord KYC is visible to Accounts only — not HQ, Legal, HO, Boss + CEO or the step 1 team", () => {
+    assert.equal(can.viewSensitive(member(["ACCOUNTS"]), kaStore), true);
+    for (const t of ["LEGAL", "HO", "LEADERSHIP", "ASM", "STATE_ADMIN", "BH", "SALES"]) assert.equal(can.viewSensitive(member([t]), kaStore), false, t);
+    assert.equal(can.viewSensitive({ id: "hq", role: "SUPER_ADMIN" as const, regionStates: [] }, kaStore), false);
+    assert.equal(can.viewSensitive({ id: "owner-1", role: "STORE_OWNER" as const, regionStates: [] }, kaStore), false);
+    assert.equal(can.viewSensitive({ ...member(["ACCOUNTS"]), regionStates: ["TN"] }, kaStore), false, "Accounts outside the store's region");
+  });
+
+  it("'Can create new stores' is an extra right, not a department", () => {
+    assert.deepEqual(departmentsOf(["RK", "STORE_CREATOR"]), ["RK"]);
+    assert.equal(teamsLabel(["RK", "STORE_CREATOR"]), "RK");
+    assert.equal(isTeamKey("STORE_CREATOR"), false);
   });
 });
 

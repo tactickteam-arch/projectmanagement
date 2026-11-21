@@ -1,4 +1,4 @@
-import { SENSITIVE_VIEW_TEAMS, STORE_OWNER_TEAM } from "@/lib/teams";
+import { SENSITIVE_VIEW_TEAMS, STORE_CREATOR, STORE_OWNER_TEAM } from "@/lib/teams";
 import { canViewStore, type AccessSubject } from "./access";
 
 /**
@@ -16,7 +16,8 @@ const inTeams = (u: AccessSubject, teams: readonly string[]) => (u.teams ?? []).
 
 export const can = {
   viewStore: (u: AccessSubject, s: StoreRef) => canViewStore(u, s),
-  createStore: (u: AccessSubject) => u.role === "SUPER_ADMIN" || u.role === "STORE_OWNER",
+  /** Create a new store: the people marked "Can create new stores" (Manju and RK), and HQ as admin. */
+  createStore: (u: AccessSubject) => u.role === "SUPER_ADMIN" || (u.role !== "STORE_OWNER" && inTeams(u, [STORE_CREATOR])),
   editStoreMaster: (u: AccessSubject, s: StoreRef) =>
     u.role === "SUPER_ADMIN" || (u.role === "STORE_OWNER" && s.ownerId === u.id),
   /** Fill in a step: SuperAdmin; the store owner on owner steps; members of the step's teams. */
@@ -31,10 +32,9 @@ export const can = {
     if (u.role === "STORE_OWNER" || !step.approverTeam) return false;
     return canViewStore(u, s) && inTeams(u, [step.approverTeam]);
   },
-  /** See a landlord's KYC and bank details: HQ, Accounts, HO, Legal, Boss + CEO, and the teams that
-   * fill in the step. Everyone else sees them hidden. */
-  viewSensitive: (u: AccessSubject, s: StoreRef, step: StepRef) =>
-    u.role === "SUPER_ADMIN" || (canViewStore(u, s) && inTeams(u, SENSITIVE_VIEW_TEAMS)) || can.editModule(u, s, step),
+  /** See a landlord's KYC and bank details: Accounts only. Everyone else (HQ included) sees them
+   * hidden; the teams that fill in the step can still enter or replace them. */
+  viewSensitive: (u: AccessSubject, s: StoreRef) => u.role !== "STORE_OWNER" && canViewStore(u, s) && inTeams(u, SENSITIVE_VIEW_TEAMS),
   /** Record something after approval (e.g. HO releases the advance, the APX PO number). */
   recordAfterApproval: (u: AccessSubject, s: StoreRef, teams: readonly string[]) =>
     u.role === "SUPER_ADMIN" || (u.role !== "STORE_OWNER" && canViewStore(u, s) && inTeams(u, teams)),

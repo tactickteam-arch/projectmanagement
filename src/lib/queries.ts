@@ -2,6 +2,7 @@ import "server-only";
 import type { ModuleStatus, OverallStatus, Prisma } from "@/generated/prisma/client";
 import { canViewStore, storeScope, type AccessSubject } from "@/lib/auth/access";
 import { can } from "@/lib/auth/permissions";
+import { HIDDEN_VALUE } from "@/lib/teams";
 import { daysBetween, formatDateOnly, todayInIndia } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { notFound as nextNotFound } from "next/navigation";
@@ -229,7 +230,7 @@ export async function dashboardSummary(user: AccessSubject): Promise<DashboardSu
   };
 }
 
-const HIDDEN = "•••• hidden";
+const HIDDEN = HIDDEN_VALUE;
 
 function storeValueOf(store: { name: string; storeCode: string; state: string; address: string | null; carpetAreaSqft: number | null }, src: StoreSource): string | number | null {
   if (src === "state") return stateName(store.state);
@@ -272,7 +273,7 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
       const def = getModuleDefinition(t.moduleType);
       if (!m || !def) return null;
       const fields = t.fieldSchema as unknown as FieldDef[];
-      const seeSensitive = can.viewSensitive(user, store, t);
+      const seeSensitive = can.viewSensitive(user, store);
       const raw = (m.details ?? {}) as Record<string, unknown>;
       const details: Record<string, unknown> = { ...raw };
       for (const f of fields) {
@@ -291,8 +292,7 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
       let review: { title: string; fromType: string; items: { field: FieldDef; value: unknown }[] } | null = null;
       if (def.reviewFrom) {
         const src = detailsOf(def.reviewFrom.moduleType);
-        const srcTemplate = templates.find((x) => x.moduleType === def.reviewFrom?.moduleType);
-        const srcSee = srcTemplate ? can.viewSensitive(user, store, srcTemplate) : false;
+        const srcSee = can.viewSensitive(user, store);
         const fieldsSrc = fieldsOf(def.reviewFrom.moduleType);
         review = {
           title: def.reviewFrom.title,

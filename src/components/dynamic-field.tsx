@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { HIDDEN_VALUE } from "@/lib/teams";
 import type { FieldDef } from "@/modules/types";
 
 type Value = unknown;
@@ -29,6 +30,25 @@ export function DynamicField({
   idPrefix?: string;
 }) {
   const id = `${idPrefix}-${field.key}`;
+  // KYC values: people who fill in the step but may not read them can replace them.
+  const [replacing, setReplacing] = useState(false);
+  if (replacing && field.sensitive) {
+    return (
+      <div className="space-y-1">
+        <DynamicField field={field} value={value === HIDDEN_VALUE ? "" : value} onChange={onChange} error={error} disabled={disabled} idPrefix={idPrefix} />
+        <button
+          type="button"
+          className="text-xs text-primary underline-offset-2 hover:underline"
+          onClick={() => {
+            setReplacing(false);
+            onChange(HIDDEN_VALUE);
+          }}
+        >
+          Keep the saved value
+        </button>
+      </div>
+    );
+  }
   const label = (
     <Label htmlFor={id} className="text-sm">
       {field.sr !== undefined && <span className="mr-1 font-mono text-xs text-muted-foreground">{field.sr}.</span>}
@@ -63,13 +83,25 @@ export function DynamicField({
       </div>
     );
   }
-  if (value === "•••• hidden") {
+  if (value === HIDDEN_VALUE) {
     return (
       <div className="space-y-1.5">
         {label}
-        <p id={id} className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          Hidden — visible to Accounts, HO, Legal, Boss + CEO and this step&apos;s team
-        </p>
+        <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <span id={id}>Saved · hidden (only Accounts can see it)</span>
+          {!disabled && (
+            <button
+              type="button"
+              className="shrink-0 text-xs font-medium text-primary underline-offset-2 hover:underline"
+              onClick={() => {
+                setReplacing(true);
+                onChange("");
+              }}
+            >
+              Replace
+            </button>
+          )}
+        </div>
       </div>
     );
   }

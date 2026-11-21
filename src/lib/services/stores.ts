@@ -67,13 +67,11 @@ export async function createStore(user: CurrentUser, raw: unknown) {
   if (!can.createStore(user)) throw forbidden();
   const input = CreateStoreInput.parse(raw);
 
-  let ownerId = user.id;
-  if (user.role === "SUPER_ADMIN") {
-    if (!input.ownerId) throw badRequest("Choose the store owner.", { ownerId: "Choose the store owner" });
-    const owner = await prisma.user.findUnique({ where: { id: input.ownerId } });
-    if (!owner || owner.role !== "STORE_OWNER" || !owner.isActive) throw badRequest("The selected owner is not an active store owner.");
-    ownerId = owner.id;
-  }
+  // Manju / RK (or HQ) create the store and assign it to its store owner.
+  if (!input.ownerId) throw badRequest("Choose the store owner.", { ownerId: "Choose the store owner" });
+  const owner = await prisma.user.findUnique({ where: { id: input.ownerId } });
+  if (!owner || owner.role !== "STORE_OWNER" || !owner.isActive) throw badRequest("The selected owner is not an active store owner.");
+  const ownerId = owner.id;
 
   const templates = await prisma.moduleTemplate.findMany({ orderBy: { sortOrder: "asc" } });
   if (templates.length === 0) throw conflict("Module templates are missing. Run the database seed.");

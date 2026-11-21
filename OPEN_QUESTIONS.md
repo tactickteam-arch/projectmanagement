@@ -2,7 +2,21 @@
 
 Source of truth: **`Sangeetha_New_Outlet_Launch_SOP_v2.pptx`** (11 slides), built "tooth and nail" from 18 Nov 2026.
 
+**Answered 21 Nov 2026** (Sangeetha, Google Sheet): items 1, 2, 6, 8, 10, 16 and 20 plus notifications — see "Decisions" below.
+
 The app follows every rule the slides state. The items below are **not** stated in the slides. For each one the app uses the interim choice shown. Please confirm or correct them; most can be changed in **Settings** without code.
+
+## Decisions (21 Nov 2026)
+| Question | Answer | In the app |
+|---|---|---|
+| When is the token advance "paid"? | When HO records it | Done (unchanged). |
+| Boss + CEO: both, or one? | Any one | Done (unchanged). |
+| Who may see landlord KYC (PAN, Aadhaar, bank)? | Accounts | Done: Accounts only. Whoever fills in step 1 can type or replace the values but sees "hidden" after saving. |
+| Who creates a new store? | Manju or RK | Done: Settings → Users → "Can create new stores" (given to RK; add Manju). HQ admin can also create. Store owners no longer can. |
+| Which MOU points are mandatory? | All except MOU copy and GST no. | Done (unchanged). |
+| Login | E-mail OTP | To build: needs an e-mail sending service (Resend via Vercel) and a sender domain. |
+| Day 1 of the schedule | Once the keys are received | Open: the setup clock already starts at the keys; see the follow-up questions. |
+| Notifications | E-mail | To build with the same e-mail service. |
 
 ## Who does what
 | # | Question (slide) | What the app does now |
