@@ -1,4 +1,4 @@
-import { SENSITIVE_VIEW_TEAMS, STORE_CREATOR, STORE_OWNER_TEAM } from "@/lib/teams";
+import { DESIGN_APPROVER, SENSITIVE_VIEW_TEAMS, SITE_PHOTOS, STORE_CREATOR, STORE_OWNER_TEAM } from "@/lib/teams";
 import { canViewStore, type AccessSubject } from "./access";
 
 /**
@@ -35,6 +35,23 @@ export const can = {
   /** See a landlord's KYC and bank details: Accounts only. Everyone else (HQ included) sees them
    * hidden; the teams that fill in the step can still enter or replace them. */
   viewSensitive: (u: AccessSubject, s: StoreRef) => u.role !== "STORE_OWNER" && canViewStore(u, s) && inTeams(u, SENSITIVE_VIEW_TEAMS),
+  /** Approve (lock) or unlock the final version of a design: Sumanth ("Approves final designs"), and HQ as admin. */
+  approveDesign: (u: AccessSubject, s: StoreRef) =>
+    u.role === "SUPER_ADMIN" || (u.role !== "STORE_OWNER" && canViewStore(u, s) && inTeams(u, [DESIGN_APPROVER])),
+  /** Log a snag: anyone who can see the store (owner, staff, HQ). */
+  raiseSnag: (u: AccessSubject, s: StoreRef) => canViewStore(u, s),
+  /** Fix a snag (upload the "after" photo or video): the department it is assigned to, the store
+   * owner, the person who logged it, and HQ. */
+  fixSnag: (u: AccessSubject & { id: string }, s: StoreRef, snag: { team: string; raisedById: string }) =>
+    u.role === "SUPER_ADMIN" ||
+    (canViewStore(u, s) && (u.id === snag.raisedById || (u.role === "STORE_OWNER" ? s.ownerId === u.id : inTeams(u, [snag.team])))),
+  /** Close a snag after seeing the fix (or send it back): the person who logged it, RK, and HQ. */
+  closeSnag: (u: AccessSubject & { id: string }, s: StoreRef, snag: { raisedById: string }) =>
+    u.role === "SUPER_ADMIN" || (canViewStore(u, s) && (u.id === snag.raisedById || (u.role !== "STORE_OWNER" && inTeams(u, ["RK"])))),
+  /** Post daily site photos for a step: Manju ("Posts daily site photos"), the step's department, HQ. */
+  postSitePhotos: (u: AccessSubject, s: StoreRef, step: StepRef) =>
+    u.role === "SUPER_ADMIN" ||
+    (canViewStore(u, s) && ((u.role !== "STORE_OWNER" && inTeams(u, [SITE_PHOTOS])) || can.editModule(u, s, step))),
   /** Record something after approval (e.g. HO releases the advance, the APX PO number). */
   recordAfterApproval: (u: AccessSubject, s: StoreRef, teams: readonly string[]) =>
     u.role === "SUPER_ADMIN" || (u.role !== "STORE_OWNER" && canViewStore(u, s) && inTeams(u, teams)),

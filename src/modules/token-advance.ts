@@ -24,6 +24,9 @@ export const tokenAdvance: ModuleDefinition = {
     moduleType: "LOCATION_FILING",
     title: "Commercial terms & landlord KYC (from the 41-point MOU sheet)",
     keys: ["advanceAgreementTerms", "monthlyRent", "rentFreePeriod", "landlordName", "landlordPan", "landlordAadhaar", "bankName", "bankAccount", "ifsc", "gstNumber"],
+    // Decided 21 Nov 2026: HO releases the token advance, so HO also sees the bank details here
+    // (not PAN or Aadhaar, and not on step 1).
+    alsoVisibleTo: { teams: ["HO"], keys: ["bankName", "bankAccount", "ifsc"] },
   },
   afterApproval: [
     {

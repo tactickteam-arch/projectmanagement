@@ -1,9 +1,11 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
+import { after } from "next/server";
 
 type Tx = Prisma.TransactionClient;
 
-/** In-app notifications (spec: in-app first; e-mail/WhatsApp later). */
+/** In-app notifications. Decided 21 Nov 2026: each one is also e-mailed (once e-mail is set up),
+ * after the request finishes — see dispatchPendingEmails. */
 export async function notifyUsers(
   tx: Tx,
   userIds: string[],
@@ -20,6 +22,18 @@ export async function notifyUsers(
       storeModuleId: n.storeModuleId ?? null,
     })),
   });
+  scheduleEmails();
+}
+
+function scheduleEmails() {
+  try {
+    after(async () => {
+      const { dispatchPendingEmails } = await import("@/lib/services/email-alerts");
+      await dispatchPendingEmails().catch((e) => console.error("E-mail alerts failed", e));
+    });
+  } catch {
+    // Outside a request (scripts, tests): the next request sends them.
+  }
 }
 
 /** "HQ / Regional Manager" recipients for a store: active SuperAdmins + RMs covering its state. */

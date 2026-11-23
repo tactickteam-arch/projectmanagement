@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { AC_CASSETTE, AC_SPLIT, acProblems, acRequirement, maskAadhaar, powerLoadProblems, preKeyProblems, requiredLoadKw, SINGLE_PHASE, THREE_PHASE } from "../src/lib/sop-rules";
+import { AC_CASSETTE, AC_SPLIT, acProblems, acRequirement, interiorsBudget, maskAadhaar, powerLoadProblems, preKeyProblems, requiredLoadKw, SINGLE_PHASE, THREE_PHASE } from "../src/lib/sop-rules";
 
 describe("slide 4: 3-phase power load by store size", () => {
   it("follows the kW table", () => {
@@ -48,5 +48,28 @@ describe("KYC", () => {
     assert.equal(maskAadhaar("1234 5678 9012"), "XXXX XXXX 9012");
     assert.equal(maskAadhaar("XXXX XXXX 9012"), "XXXX XXXX 9012");
     assert.equal(maskAadhaar("12345"), null);
+  });
+});
+
+describe("decision 21 Nov 2026: interiors cost vs the approved quotation", () => {
+  const quote = (approvalStatus: string, amount = 500000) => ({ moduleType: "INTERIORS_QUOTE", actualCost: null, approvalStatus, details: { quotationAmount: amount } });
+  it("counts only an approved quotation", () => {
+    assert.equal(interiorsBudget([quote("PENDING"), { moduleType: "SITE_FURNITURE", actualCost: 900000 }]).quote, null);
+    assert.equal(interiorsBudget([quote("PENDING"), { moduleType: "SITE_FURNITURE", actualCost: 900000 }]).over, 0);
+  });
+  it("adds furniture, electrical, AC, branding and the Interiors track, nothing else", () => {
+    const b = interiorsBudget([
+      quote("APPROVED"),
+      { moduleType: "SITE_FURNITURE", actualCost: 200000 },
+      { moduleType: "SITE_ELECTRICAL", actualCost: "150000" },
+      { moduleType: "SITE_AC", actualCost: 100000 },
+      { moduleType: "SITE_BRANDING", actualCost: 50000 },
+      { moduleType: "INTERIORS", actualCost: 30000 },
+      { moduleType: "TOKEN_ADVANCE", actualCost: 300000 },
+    ]);
+    assert.deepEqual(b, { quote: 500000, actual: 530000, over: 30000 });
+  });
+  it("is not over at exactly the quotation", () => {
+    assert.equal(interiorsBudget([quote("APPROVED"), { moduleType: "SITE_FURNITURE", actualCost: 500000 }]).over, 0);
   });
 });

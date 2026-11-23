@@ -38,7 +38,7 @@ npm install            # also generates the Prisma client
 cp .env.example .env   # fill in database URLs and SESSION_SECRET (32+ random chars)
 npm run db:migrate     # create tables
 npm run db:sync-steps  # write the 21 SOP steps into module_templates and give every store all steps
-npm run db:seed        # demo data (9 fictional stores, 21 demo users) — runs the step sync itself
+npm run db:seed        # demo data (9 fictional stores, 23 demo users) — runs the step sync itself
 npm run dev            # http://localhost:3000
 ```
 
@@ -69,7 +69,7 @@ Sangeetha team members (role "Sangeetha team") see all stores. Each one edits an
 | Team | E-mail |
 |---|---|
 | Boss + CEO | leadership@sangeetha.test |
-| RK | rk@sangeetha.test |
+| RK (also creates stores) | rk@sangeetha.test |
 | Accounts | accounts@sangeetha.test |
 | Head office (HO) | ho@sangeetha.test |
 | Legal and Tax team | legal@sangeetha.test |
@@ -83,13 +83,15 @@ Sangeetha team members (role "Sangeetha team") see all stores. Each one edits an
 | HR | hr@sangeetha.test |
 | Purchase · e-Com (CXO) | purchase@sangeetha.test |
 | Consumer finance · IT · Admin | finance.it@sangeetha.test |
+| Manjunath J (creates stores, posts daily site photos) | manju@sangeetha.test |
+| Sumanth (approves final designs) | sumanth@sangeetha.test |
 
 Re-running `npm run db:seed` resets the demo data.
 
 ## Features
 
 **Built and tested**
-- Login (e-mail + password, bcrypt, 8-hour JWT cookie), 4 roles (HQ, Regional Manager, Store owner, Sangeetha team) plus teams; access is checked on every API call and page
+- Login: e-mail + password until e-mail sending is set up; then a 6-digit code by e-mail only (10 minutes, 5 tries, one use). 8-hour JWT cookie, 4 roles (HQ, Regional Manager, Store owner, Sangeetha team) plus teams; access is checked on every API call and page
 - **SOP flow page per store.** It mirrors the slides: stages 1–7, the T-7 panel, on-site order, the 8 department tracks and the all-green gate, with who does each step, the approver and what each step waits for
 - **Weekly RAG** report (slide 11) with Excel export; store × stage grid on the dashboard
 - **My tasks** for team members: what to do now, what has been sent for approval, what is coming up
@@ -99,10 +101,18 @@ Re-running `npm run db:seed` resets the demo data.
 - **Settings:** users and teams, who fills in and approves each step, store assignment, scheduling defaults
 - All spec validation rules, overall status rules, progress, overdue, days since handover
 - Activity log, in-app notifications (incl. daily overdue check), Excel export (store list, delays, costs)
+- **Snags** tab: log a defect with photo or video, assign a department and fix-by date; fixed with an after photo/video; closed or sent back by whoever logged it, RK or HQ. Soft launch waits for every snag; late snags alert daily
+- **Site photos** tab: from the keys to launch, Manju (right "Posts daily site photos") and each department post the day's photos; a store with none the day before is flagged
+- **Design versions**: store layout and sign board keep every version; the design approver (Sumanth) approves the final one, which locks it
+- **Timeline**: all 21 steps, planned vs actual, with today, keys and target launch
+- Interiors cost vs the approved quotation; RK is alerted the first time it goes over
+- E-mail copy of every alert (Resend), once `RESEND_API_KEY` and `EMAIL_FROM` are set
+- Add to Home screen (web app manifest and icons)
 - Uploaded files stored in the database (table `file_blobs`, works on Vercel), served only after an access check
 
 **Deferred**
-- PDF export, e-mail/WhatsApp notifications, phone OTP (paid SMS), offline/PWA
+- PDF export, WhatsApp notifications (to be confirmed), offline use, vendor logins (not needed)
+- Videos over about 4 MB (Vercel's request limit; needs Vercel Blob)
 - Editing module field definitions in the UI (fields are config files: `src/modules/*.ts`)
 - Cloud file storage (the `StorageDriver` interface in `src/lib/storage.ts` is ready for S3/Supabase Storage)
 
@@ -114,18 +124,19 @@ Re-running `npm run db:seed` resets the demo data.
 ## Checks
 
 ```bash
-npm test          # 73 unit tests (SOP rules, status, step rules, scheduling, access, store codes)
+npm test          # 86 unit tests (SOP rules, status, step rules, scheduling, access, store codes)
 npm run typecheck
 npm run lint
 ```
 
-End-to-end on 18 Nov: 304 checks over the real API and a local database, all passed. A new 1,200 sq ft store went through all 21 steps, each done by the right partner (store owner, ASM, State Admin, Boss + CEO, RK, Legal, Accounts, HO, Purchase, Marketing, Interiors, IT/Admin, Brand managers, HR, Sales). The checks covered:
+End-to-end on 21 Nov: 382 checks over the real API and a local database, all passed. A new 1,200 sq ft store went through all 21 steps, each done by the right partner (store owner, ASM, State Admin, Boss + CEO, RK, Legal, Accounts, HO, Purchase, Marketing, Interiors, IT/Admin, Brand managers, HR, Sales). The checks covered:
 - the wrong person refused at every step, and steps locked until the earlier ones are done;
 - single-phase / too-low power, wrong AC type or tonnage, the T-7 rule, missing points and documents, bad PAN / IFSC;
 - KYC hidden from Marketing but shown to Accounts;
 - send-back and re-submission, HO's payment gate and the APX PO;
 - Day 0 planning and the notices to every department; the soft launch;
-- each approver's queue, every page for every partner, the four Excel exports, the weekly RAG and Settings.
+- each approver's queue, every page for every partner, the four Excel exports, the weekly RAG and Settings;
+- HO seeing bank details on step 3, the RK cost alert, design versions (approve, lock, unlock), site photos and snags (including the soft launch waiting for open snags).
 
 ## Layout
 

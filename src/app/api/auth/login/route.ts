@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { homePathFor } from "@/lib/auth/dal";
+import { passwordAllowedFor } from "@/lib/auth/login-code";
 import { setSessionCookie } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 
@@ -15,7 +16,8 @@ const LoginBody = z.object({
 // so response time does not reveal which accounts exist.
 const DUMMY_HASH = "$2b$12$3w4MrSJYwq7CSxmnGkrTr.dnmWYDF8bvi6ETjlBwffpphfQkcIiN.";
 
-/** POST /api/auth/login — e-mail and password (phone OTP comes in a later phase). */
+/** POST /api/auth/login — e-mail and password. Switched off once sign-in by e-mail code is on
+ * (decided 21 Nov 2026), except demo accounts while DEMO_PASSWORD_LOGIN=1. */
 export async function POST(request: Request) {
   try {
     const parsed = LoginBody.safeParse(await request.json().catch(() => null));
@@ -23,6 +25,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Enter a valid e-mail address and password." }, { status: 400 });
     }
     const { email, password } = parsed.data;
+    if (!passwordAllowedFor(email)) {
+      return NextResponse.json({ error: "Passwords are no longer used. Sign in with a code sent to your e-mail." }, { status: 400 });
+    }
 
     const user = await prisma.user.findUnique({
       where: { email },

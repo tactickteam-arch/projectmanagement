@@ -8,6 +8,9 @@ export interface FileItem {
   tag: string | null;
   sizeBytes: number;
   uploadedAt: string;
+  /** Design versions: when this version was approved as the final one, and by whom. */
+  approvedAt?: string | null;
+  approvedBy?: { name: string } | null;
 }
 
 export const TAG_LABELS: Record<string, string> = {
@@ -23,6 +26,8 @@ export const TAG_LABELS: Record<string, string> = {
   receipt: "Receipt",
   agreement: "Agreement",
   design: "Design file",
+  design_layout: "Store layout design",
+  design_signboard: "Sign board design",
   permit: "Permit",
   document: "Document",
 };

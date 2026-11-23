@@ -63,6 +63,10 @@ export interface FieldDef {
   mustTick?: string;
   /** For file fields: attachment tag used when uploading. */
   attachmentTag?: string;
+  /** For file fields: a design kept in versions (each upload is a new version). Someone with the
+   * "Approves final designs" right locks one version as final; a required design needs a final
+   * version before the step can be Completed. Decided 21 Nov 2026 (final designs: Sumanth). */
+  design?: boolean;
   /** Field is only shown when another field has a given value. */
   showWhen?: { key: string; equals: string | boolean };
 }
@@ -138,7 +142,9 @@ export interface ModuleDefinition {
   systemAction?: string;
   afterApproval?: AfterAction[];
   /** Values of an earlier step shown for review (e.g. Accounts verifies the MOU sheet's KYC). */
-  reviewFrom?: { moduleType: string; keys: string[]; title: string };
+  /** Fields from an earlier step shown read-only for review. `alsoVisibleTo` lets extra teams read
+   * some hidden (sensitive) fields here only, e.g. HO reads the bank details on step 3 to pay. */
+  reviewFrom?: { moduleType: string; keys: string[]; title: string; alsoVisibleTo?: { teams: string[]; keys: string[] } };
   checks?: SopCheck[];
   /** The actual end date must be entered when completing (the T-7 rule is checked against it). */
   requireActualEnd?: boolean;

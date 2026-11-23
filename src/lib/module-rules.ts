@@ -156,7 +156,8 @@ export interface ModuleRuleInput {
   /** Field definitions and the details as they will be saved — checked when marking Completed. */
   fields?: FieldDef[];
   details?: Record<string, unknown>;
-  /** Attachment tags uploaded to the step (required file fields). */
+  /** Attachment tags uploaded to the step (required file fields), plus "final:<tag>" for each
+   * design with an approved final version. */
   uploadedTags?: string[];
   /** Messages from sopCheckErrors, checked when marking Completed. */
   sopProblems?: string[];
@@ -211,7 +212,15 @@ export function completionErrors(fields: FieldDef[], details: Record<string, unk
   const missing: string[] = [];
   for (const f of fields) {
     if (!f.required || !isVisible(f, details)) continue;
-    if (f.type === "file") {
+    if (f.type === "file" && f.design) {
+      const tag = f.attachmentTag ?? "document";
+      if (!uploadedTags.includes(`final:${tag}`)) {
+        errors[`file.${tag}`] = uploadedTags.includes(tag)
+          ? `The final ${f.label.toLowerCase()} must be approved first (design approver)`
+          : `Upload the ${f.label.toLowerCase()} and get the final version approved`;
+        missing.push(f.label);
+      }
+    } else if (f.type === "file") {
       if (!uploadedTags.includes(f.attachmentTag ?? "document")) {
         errors[`file.${f.attachmentTag ?? "document"}`] = `Upload the ${f.label.toLowerCase()}`;
         missing.push(f.label);

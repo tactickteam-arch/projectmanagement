@@ -1,4 +1,5 @@
 import "server-only";
+import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import type { Prisma } from "@/generated/prisma/client";
@@ -27,7 +28,8 @@ export const CreateUserInput = z.object({
   role: z.enum(["SUPER_ADMIN", "REGIONAL_MANAGER", "STORE_OWNER", "TEAM_MEMBER"]),
   regionStates: z.array(z.string().refine(isStateCode, "Unknown state")).default([]),
   teams: teams.default([]),
-  password,
+  /** Not needed once people sign in with an e-mail code (decided 21 Nov 2026). */
+  password: password.optional(),
 });
 
 export const UpdateUserInput = z.object({
@@ -64,7 +66,8 @@ export async function createUser(user: CurrentUser, raw: unknown) {
         role: input.role,
         regionStates: input.role === "REGIONAL_MANAGER" || input.role === "TEAM_MEMBER" ? input.regionStates : [],
         teams: input.role === "STORE_OWNER" ? [] : input.teams,
-        passwordHash: await bcrypt.hash(input.password, 12),
+        // No password given (e-mail code sign-in): store an unusable one.
+        passwordHash: await bcrypt.hash(input.password ?? randomBytes(32).toString("hex"), 12),
       },
       select: { id: true },
     });

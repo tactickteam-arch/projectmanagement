@@ -42,7 +42,8 @@ const USERS: { key: string; email: string; name: string; role: Role; regionState
   { key: "fatima", email: "owner.fatima@sangeetha.test", name: "Fatima Shaikh (demo)", role: "STORE_OWNER", regionStates: [], teams: [] },
   { key: "leadership", email: "leadership@sangeetha.test", name: "Leadership — Boss + CEO (demo)", role: "TEAM_MEMBER", regionStates: [], teams: ["LEADERSHIP"] },
   { key: "rk", email: "rk@sangeetha.test", name: "RK (demo)", role: "TEAM_MEMBER", regionStates: [], teams: ["RK", "STORE_CREATOR"] },
-  { key: "manju", email: "manju@sangeetha.test", name: "Manju (demo — creates new stores)", role: "TEAM_MEMBER", regionStates: [], teams: ["STORE_CREATOR"] },
+  { key: "manju", email: "manju@sangeetha.test", name: "Manjunath J (demo — creates stores, site photos)", role: "TEAM_MEMBER", regionStates: [], teams: ["STORE_CREATOR", "SITE_PHOTOS"] },
+  { key: "sumanth", email: "sumanth@sangeetha.test", name: "Sumanth (demo — approves final designs)", role: "TEAM_MEMBER", regionStates: [], teams: ["DESIGN_APPROVER"] },
   { key: "accounts", email: "accounts@sangeetha.test", name: "Priya Menon (demo Accounts)", role: "TEAM_MEMBER", regionStates: [], teams: ["ACCOUNTS"] },
   { key: "ho", email: "ho@sangeetha.test", name: "Ramesh Gupta (demo Head office)", role: "TEAM_MEMBER", regionStates: [], teams: ["HO"] },
   { key: "legal", email: "legal@sangeetha.test", name: "Suresh Babu (demo Legal & Tax)", role: "TEAM_MEMBER", regionStates: [], teams: ["LEGAL", "TAX"] },
@@ -391,7 +392,10 @@ async function main() {
           const key = `${store.id}/${mod.id}/${randomUUID()}.svg`;
           await prisma.fileBlob.create({ data: { key, data: new Uint8Array(sampleSvg(s.name, f.label, hue)) } });
           await prisma.attachment.create({
-            data: { storeModuleId: mod.id, fileUrl: key, fileType: "image/svg+xml", fileName: `sample-${f.attachmentTag}.svg`, sizeBytes: 1200, tag: f.attachmentTag ?? "document", uploadedById: ids[editorKey], uploadedAt: completedAt ?? ago(-1) },
+            data: {
+              storeModuleId: mod.id, fileUrl: key, fileType: "image/svg+xml", fileName: `sample-${f.attachmentTag}.svg`, sizeBytes: 1200, tag: f.attachmentTag ?? "document", uploadedById: ids[editorKey], uploadedAt: completedAt ?? ago(-1),
+              ...(f.design ? { approvedAt: completedAt ?? ago(-1), approvedById: ids.sumanth } : {}),
+            },
           });
           hue = (hue + 23) % 360;
         }
@@ -437,6 +441,35 @@ async function main() {
     const overallStatus = computeOverallStatus({ overallStatus: null, keyHandoverDate: store.keyHandoverDate, actualLaunchDate: store.actualLaunchDate }, modules);
     await prisma.store.update({ where: { id: store.id }, data: { overallStatus } });
     console.log(`${s.code.padEnd(16)} ${s.city.padEnd(10)} → ${overallStatus ?? "(location filing)"}`);
+  }
+  // 4. Snags and daily site photos on the store in its on-site work (decisions of 21 Nov 2026).
+  const site = await prisma.store.findFirst({ where: { name: { contains: "Jayanagar" }, ownerId: { in: Object.values(ids) } }, include: { modules: true } });
+  if (site?.keyHandoverDate) {
+    const modOf = (t: string) => site.modules.find((m) => m.moduleType === t)!;
+    const photo = async (modId: string, label: string, hue: number, link: { snagId?: string; siteUpdateId?: string }, tag: string, by: string, at: Date) => {
+      const key = `${site.id}/${modId}/${randomUUID()}.svg`;
+      await prisma.fileBlob.create({ data: { key, data: new Uint8Array(sampleSvg(site.name, label, hue)) } });
+      await prisma.attachment.create({ data: { storeModuleId: modId, fileUrl: key, fileType: "image/svg+xml", fileName: `${tag}.svg`, sizeBytes: 1200, tag, uploadedById: ids[by], uploadedAt: at, ...link } });
+    };
+    const kh = modOf("KEY_HANDOVER").id;
+    const s1 = await prisma.snag.create({ data: { storeId: site.id, stage: "KEY_HANDOVER", title: "Shutter centre lock jammed", details: "Lock does not turn fully; landlord to replace.", team: "STATE_ADMIN", dueDate: d(-10), status: "CLOSED", raisedById: ids.rk, raisedAt: ago(-18, 11), fixedById: ids.stateadmin, fixedAt: ago(-14, 16), fixNote: "New lock fitted by the landlord.", closedById: ids.rk, closedAt: ago(-13, 10) } });
+    await photo(kh, "Snag: shutter lock", 10, { snagId: s1.id }, "snag_before", "rk", ago(-18, 11));
+    await photo(kh, "Fixed: new shutter lock", 140, { snagId: s1.id }, "snag_after", "stateadmin", ago(-14, 16));
+    const s2 = await prisma.snag.create({ data: { storeId: site.id, stage: "KEY_HANDOVER", title: "Water seepage on the back wall", team: "INTERIORS", dueDate: d(-2), status: "OPEN", raisedById: ids.manju, raisedAt: ago(-6, 12) } });
+    await photo(kh, "Snag: back wall seepage", 30, { snagId: s2.id }, "snag_before", "manju", ago(-6, 12));
+    const s3 = await prisma.snag.create({ data: { storeId: site.id, stage: "KEY_HANDOVER", title: "Two ceiling lights not working", team: "FINANCE_IT", dueDate: d(2), status: "FIXED", raisedById: ids.stateadmin, raisedAt: ago(-4, 15), fixedById: ids.finit, fixedAt: ago(-1, 17), fixNote: "Drivers replaced." } });
+    await photo(kh, "Snag: ceiling lights off", 50, { snagId: s3.id }, "snag_before", "stateadmin", ago(-4, 15));
+    await photo(kh, "Fixed: ceiling lights on", 160, { snagId: s3.id }, "snag_after", "finit", ago(-1, 17));
+    for (const [daysAgo, type, by, note, labels] of [
+      [2, "SITE_ELECTRICAL", "manju", "Cabling done on the left wall; IT rack placed. 4 electricians on site. Tomorrow: right wall.", ["Electrical: left wall", "IT rack"]],
+      [1, "MARKETING", "marketing", "In-shop branding panels delivered, fixing starts tomorrow.", ["Branding panels delivered"]],
+      [1, "SITE_ELECTRICAL", "manju", "Right wall cabling 70% done. Problem: one DB box short, ordered.", ["Electrical: right wall", "DB box area"]],
+    ] as const) {
+      const u = await prisma.siteUpdate.create({ data: { storeId: site.id, storeModuleId: modOf(type).id, date: d(-daysAgo), note, createdById: ids[by], createdAt: ago(-daysAgo, 18) } });
+      let hue = 200;
+      for (const l of labels) await photo(modOf(type).id, l, (hue += 30), { siteUpdateId: u.id }, "photo_site", by, ago(-daysAgo, 18));
+    }
+    console.log(`Snags and site photos added to ${site.name}`);
   }
   console.log(`\nSeeded ${templates.length} SOP steps, ${USERS.length} demo users, ${STORES.length} demo stores.`);
 }

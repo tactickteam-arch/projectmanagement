@@ -28,6 +28,8 @@ export const TEAM_KEYS = Object.keys(TEAMS) as TeamKey[];
 /** Extra rights kept in a user's teams list. They are not departments: they fill in and approve no step. */
 export const PERMISSIONS = {
   STORE_CREATOR: "Can create new stores",
+  DESIGN_APPROVER: "Approves final designs (store layout, sign board)",
+  SITE_PHOTOS: "Posts daily site photos for every store",
 } as const;
 export type PermissionKey = keyof typeof PERMISSIONS;
 export const PERMISSION_KEYS = Object.keys(PERMISSIONS) as PermissionKey[];
@@ -42,6 +44,11 @@ export function departmentsOf(keys: readonly string[]): string[] {
 export const HIDDEN_VALUE = "•••• hidden";
 /** Who creates a new store in the app: the people HQ marks "Can create new stores" (Manju and RK). */
 export const STORE_CREATOR = "STORE_CREATOR";
+
+/** Decided 21 Nov 2026: Sumanth approves and locks the final store layout and sign board design. */
+export const DESIGN_APPROVER = "DESIGN_APPROVER";
+/** Decided 21 Nov 2026: Manju (and the department doing the work) posts daily site photos. */
+export const SITE_PHOTOS = "SITE_PHOTOS";
 
 /** Pseudo-team used in edit_teams: the store's assigned owner. */
 export const STORE_OWNER_TEAM = "STORE_OWNER";

@@ -8,7 +8,7 @@ import { notifyUsers, teamRecipients, teamRecipientsFor } from "@/lib/notify";
 import { ragRows } from "@/lib/rag";
 import { getSetting, setSetting, SETTING_KEYS } from "@/lib/settings";
 import { daysOverdue } from "@/lib/status";
-import { RAG_REPORT_TEAMS } from "@/lib/teams";
+import { RAG_REPORT_TEAMS, SITE_PHOTOS } from "@/lib/teams";
 import { AFTER_KEY_TYPES, getModuleDefinition, MATERIAL_ORDERING, MODULE_TYPES, SIGN_BOARD } from "@/modules";
 
 export async function listNotifications(user: CurrentUser, limit = 50) {
@@ -51,6 +51,47 @@ export async function ensureDailyOverdueCheck(): Promise<void> {
   await overdueAlerts(today);
   await preKeyIntimations(today);
   await weeklyRag(today);
+  await lateSnags(today);
+  await missingSitePhotos(today);
+}
+
+/** Decided 21 Nov 2026: snags past their fix-by date — the department that fixes them is told daily. */
+async function lateSnags(today: Date) {
+  const late = await prisma.snag.findMany({
+    where: { status: "OPEN", dueDate: { lt: today }, store: ACTIVE },
+    select: { id: true, title: true, team: true, dueDate: true, store: { select: { id: true, name: true, state: true, ownerId: true } } },
+  });
+  if (!late.length) return;
+  await prisma.$transaction(async (tx) => {
+    for (const s of late) {
+      await notifyUsers(tx, await teamRecipients(tx, s.store, [s.team]), {
+        type: "snag_late",
+        message: `Snag late — ${s.store.name}: "${s.title}" was due ${formatDate(formatDateOnly(s.dueDate as Date))}. Upload the fix photo or video and mark it fixed.`,
+        storeId: s.store.id,
+      });
+    }
+  });
+}
+
+/** Decided 21 Nov 2026: during the on-site work (keys received, not launched) a store with no site
+ * photos for yesterday is flagged to Manju ("Posts daily site photos") and State Admin. */
+async function missingSitePhotos(today: Date) {
+  const yesterday = addDays(today, -1);
+  const stores = await prisma.store.findMany({
+    where: { ...ACTIVE, keyHandoverDate: { lt: yesterday }, actualLaunchDate: null },
+    select: { id: true, name: true, state: true, ownerId: true, siteUpdates: { where: { date: yesterday, attachments: { some: {} } }, select: { id: true }, take: 1 } },
+  });
+  const missing = stores.filter((s) => s.siteUpdates.length === 0);
+  if (!missing.length) return;
+  await prisma.$transaction(async (tx) => {
+    for (const s of missing) {
+      await notifyUsers(tx, await teamRecipients(tx, s, [SITE_PHOTOS, "STATE_ADMIN"]), {
+        type: "site_photos_missing",
+        message: `${s.name}: no site photos were posted for ${formatDate(formatDateOnly(yesterday))}. Post today's photos on the store's Site photos tab.`,
+        storeId: s.id,
+      });
+    }
+  });
 }
 
 async function overdueAlerts(today: Date) {

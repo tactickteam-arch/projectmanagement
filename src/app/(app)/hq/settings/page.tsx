@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/page-header";
 import { AssignmentPanel, ChecklistsPanel, SchedulingPanel, StepsPanel, UsersPanel } from "@/components/settings-panels";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { requirePageUser } from "@/lib/auth/dal";
+import { loginMode } from "@/lib/auth/login-code";
 import { prisma } from "@/lib/db";
 import { activeStoreOwners } from "@/lib/queries";
 import { listUsers } from "@/lib/services/admin";
@@ -40,6 +41,7 @@ export default async function SettingsPage() {
         </TabsList>
         <TabsContent value="users" className="mt-4">
           <UsersPanel
+            codeLogin={loginMode() === "code"}
             currentUserId={user.id}
             users={users.map((u) => ({ id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, regionStates: u.regionStates, teams: u.teams, isActive: u.isActive, stores: u._count.ownedStores }))}
           />

@@ -104,6 +104,33 @@ describe("decisions of 21 Nov 2026", () => {
     assert.equal(teamsLabel(["RK", "STORE_CREATOR"]), "RK");
     assert.equal(isTeamKey("STORE_CREATOR"), false);
   });
+
+  it("final designs are approved by Sumanth ('Approves final designs') or HQ only", () => {
+    assert.equal(can.approveDesign(member(["DESIGN_APPROVER"]), kaStore), true);
+    for (const t of ["INTERIORS", "MARKETING", "LEADERSHIP", "RK"]) assert.equal(can.approveDesign(member([t]), kaStore), false, t);
+    assert.equal(can.approveDesign({ id: "hq", role: "SUPER_ADMIN" as const, regionStates: [] }, kaStore), true);
+    assert.equal(can.approveDesign({ id: "owner-1", role: "STORE_OWNER" as const, regionStates: [], teams: ["DESIGN_APPROVER"] }, kaStore), false);
+    assert.deepEqual(departmentsOf(["DESIGN_APPROVER", "SITE_PHOTOS"]), []);
+  });
+
+  it("snags: the assigned department fixes; the person who logged it, RK or HQ closes", () => {
+    const snag = { team: "INTERIORS", raisedById: "x" };
+    assert.equal(can.fixSnag(member(["INTERIORS"]), kaStore, snag), true);
+    assert.equal(can.fixSnag(member(["HR"]), kaStore, snag), false);
+    assert.equal(can.fixSnag({ id: "owner-1", role: "STORE_OWNER" as const, regionStates: [] }, kaStore, snag), true);
+    assert.equal(can.closeSnag(member(["INTERIORS"]), kaStore, snag), false);
+    assert.equal(can.closeSnag(member(["RK"]), kaStore, snag), true);
+    assert.equal(can.closeSnag({ ...member(["HR"]), id: "x" }, kaStore, snag), true, "the person who logged it");
+    assert.equal(can.closeSnag({ id: "owner-1", role: "STORE_OWNER" as const, regionStates: [] }, kaStore, snag), false);
+  });
+
+  it("daily site photos: Manju ('Posts daily site photos') for every step, a department for its own steps", () => {
+    const furniture = { editTeams: ["MARKETING", "INTERIORS"], approverTeam: null };
+    assert.equal(can.postSitePhotos(member(["SITE_PHOTOS"]), kaStore, furniture), true);
+    assert.equal(can.postSitePhotos(member(["INTERIORS"]), kaStore, furniture), true);
+    assert.equal(can.postSitePhotos(member(["HR"]), kaStore, furniture), false);
+    assert.equal(can.postSitePhotos({ id: "owner-1", role: "STORE_OWNER" as const, regionStates: [], teams: ["SITE_PHOTOS"] }, kaStore, furniture), false);
+  });
 });
 
 describe("launch-flow step definitions", () => {

@@ -21,6 +21,7 @@ import { teamLabel } from "@/lib/teams";
 import { cn } from "@/lib/utils";
 import type { FieldDef } from "@/modules/types";
 import { DynamicField } from "./dynamic-field";
+import { DesignVersions } from "./design-versions";
 import { Uploader } from "./uploader";
 
 export interface PreKeyState {
@@ -213,7 +214,22 @@ export function ModuleForm({
               {rest.length > 0 && (
                 <div className="grid gap-4 sm:grid-cols-2">
                   {rest.map((f) =>
-                    f.type === "file" ? (
+                    f.type === "file" && f.design ? (
+                      <div key={f.key} className="sm:col-span-2">
+                        <DesignVersions
+                          moduleId={m.id}
+                          tag={f.attachmentTag ?? "document"}
+                          label={f.label}
+                          files={files(f.attachmentTag ?? "document")}
+                          canEdit={filesEditable}
+                          canApprove={m.canApproveDesign}
+                          stepClosed={locked || awaiting}
+                          required={f.required}
+                          error={errors[`file.${f.attachmentTag ?? "document"}`]}
+                        />
+                        {f.help && <p className="mt-1 text-xs text-muted-foreground">{f.help}</p>}
+                      </div>
+                    ) : f.type === "file" ? (
                       <div key={f.key} className="sm:col-span-2">
                         <Uploader
                           moduleId={m.id}

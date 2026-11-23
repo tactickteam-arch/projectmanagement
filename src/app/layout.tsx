@@ -10,6 +10,9 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: { default: "Store Launch Tracker · Sangeetha Mobiles", template: "%s · Store Launch Tracker" },
   description: "Tracks every new Sangeetha Mobiles store from location finalisation to launch.",
+  applicationName: "Store Launch Tracker",
+  appleWebApp: { capable: true, title: "Store Launch", statusBarStyle: "default" },
+  icons: { apple: "/icons/apple-icon.png" },
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#ffffff" };

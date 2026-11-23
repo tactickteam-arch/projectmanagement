@@ -246,7 +246,7 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
       owner: { select: { id: true, name: true, email: true, phone: true } },
       modules: {
         include: {
-          attachments: { orderBy: { uploadedAt: "asc" }, select: { id: true, fileType: true, fileName: true, tag: true, sizeBytes: true, uploadedAt: true } },
+          attachments: { where: { snagId: null, siteUpdateId: null }, orderBy: { uploadedAt: "asc" }, select: { id: true, fileType: true, fileName: true, tag: true, sizeBytes: true, uploadedAt: true, approvedAt: true, approvedBy: { select: { name: true } } } },
           approvedBy: { select: { name: true } },
           updatedBy: { select: { name: true } },
           _count: { select: { comments: true } },
@@ -293,6 +293,8 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
       if (def.reviewFrom) {
         const src = detailsOf(def.reviewFrom.moduleType);
         const srcSee = can.viewSensitive(user, store);
+        const extra = def.reviewFrom.alsoVisibleTo;
+        const extraSee = (k: string) => !!extra && extra.keys.includes(k) && user.role !== "STORE_OWNER" && (user.teams ?? []).some((t) => extra.teams.includes(t));
         const fieldsSrc = fieldsOf(def.reviewFrom.moduleType);
         review = {
           title: def.reviewFrom.title,
@@ -300,7 +302,7 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
           items: def.reviewFrom.keys
             .map((k) => fieldsSrc.find((f) => f.key === k))
             .filter((f): f is FieldDef => f !== undefined)
-            .map((f) => ({ field: f, value: f.sensitive && !srcSee && src[f.key] != null ? HIDDEN : (src[f.key] ?? null) })),
+            .map((f) => ({ field: f, value: f.sensitive && !srcSee && !extraSee(f.key) && src[f.key] != null ? HIDDEN : (src[f.key] ?? null) })),
         };
       }
       const missing = missingPrerequisites(t.moduleType, store.modules);
@@ -357,7 +359,8 @@ export async function getStoreDetail(user: AccessSubject, storeId: string) {
         overdue: isOverdue(m.plannedEnd, m.status, today),
         daysOverdue: daysOverdue(m.plannedEnd, m.status, today),
         commentCount: m._count.comments,
-        attachments: m.attachments.map((a) => ({ ...a, uploadedAt: a.uploadedAt.toISOString() })),
+        attachments: m.attachments.map((a) => ({ ...a, uploadedAt: a.uploadedAt.toISOString(), approvedAt: a.approvedAt?.toISOString() ?? null })),
+        canApproveDesign: can.approveDesign(user, store),
       };
     })
     .filter((m): m is NonNullable<typeof m> => m !== null);
@@ -439,7 +442,7 @@ export async function approvalsQueue(user: AccessSubject) {
       completedAt: true,
       updatedAt: true,
       actualCost: true,
-      _count: { select: { attachments: true } },
+      _count: { select: { attachments: { where: { snagId: null, siteUpdateId: null } } } },
       updatedBy: { select: { name: true } },
       store: { select: { id: true, storeCode: true, name: true, city: true, state: true } },
     },

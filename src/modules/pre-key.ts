@@ -26,6 +26,15 @@ export const interiorsQuote: ModuleDefinition = {
     { key: "quotationAmount", label: "Quotation amount", type: "currency", min: 0, required: true },
     { key: "quotationScope", label: "Scope (furniture, electrical, AC, branding)", type: "longtext", required: true },
     { key: "quotation", label: "Vendor quotation", type: "file", attachmentTag: "quotation", required: true },
+    {
+      key: "storeLayout",
+      label: "Store layout design",
+      type: "file",
+      attachmentTag: "design_layout",
+      design: true,
+      required: true,
+      help: "Upload each new version. Sumanth approves and locks the final layout.",
+    },
   ],
 };
 
@@ -53,6 +62,15 @@ export const signBoard: ModuleDefinition = {
   defaultDurationDays: 14,
   minPhotos: 0,
   fields: [
+    {
+      key: "signBoardDesign",
+      label: "Sign board design",
+      type: "file",
+      attachmentTag: "design_signboard",
+      design: true,
+      required: true,
+      help: "Upload each new version. Sumanth approves and locks the final design before fabrication.",
+    },
     { key: "fabricated", label: "Sign board fabricated", type: "task", owner: "Marketing" },
     { key: "mounted", label: "Mounted", type: "task", owner: "Marketing / State Admin" },
     { key: "illuminated", label: "Illuminated", type: "task", owner: "State Admin" },

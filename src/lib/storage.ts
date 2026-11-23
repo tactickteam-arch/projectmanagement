@@ -43,6 +43,16 @@ export function detectFileType(buf: Buffer): { mime: string; ext: string } | nul
   return null;
 }
 
+/** Short phone videos (snag fixes): MP4 / MOV (ISO "ftyp" box) and WebM. */
+export function detectVideoType(buf: Buffer): { mime: string; ext: string } | null {
+  if (buf.length >= 12 && buf.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brand = buf.subarray(8, 12).toString("ascii");
+    return brand === "qt  " ? { mime: "video/quicktime", ext: "mov" } : { mime: "video/mp4", ext: "mp4" };
+  }
+  if (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return { mime: "video/webm", ext: "webm" };
+  return null;
+}
+
 export function isImageType(mime: string): boolean {
   return mime.startsWith("image/");
 }

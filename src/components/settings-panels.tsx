@@ -28,7 +28,7 @@ export interface UserRow {
   stores: number;
 }
 
-export function UsersPanel({ users, currentUserId }: { users: UserRow[]; currentUserId: string }) {
+export function UsersPanel({ users, currentUserId, codeLogin = false }: { users: UserRow[]; currentUserId: string; codeLogin?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -48,7 +48,7 @@ export function UsersPanel({ users, currentUserId }: { users: UserRow[]; current
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <CreateUserDialog />
+        <CreateUserDialog codeLogin={codeLogin} />
       </div>
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full min-w-[720px] text-sm">
@@ -90,7 +90,7 @@ export function UsersPanel({ users, currentUserId }: { users: UserRow[]; current
                 <td className="px-4 py-2.5">
                   <div className="flex justify-end gap-2">
                     {u.role !== "STORE_OWNER" && <TeamsDialog user={u} />}
-                    <ResetPasswordDialog user={u} />
+                    {!codeLogin && <ResetPasswordDialog user={u} />}
                     {u.id !== currentUserId && (
                       <Button size="sm" variant="outline" onClick={() => toggle(u)} disabled={busy === u.id}>
                         {busy === u.id ? <Loader2 className="size-4 animate-spin" /> : u.isActive ? <UserX className="size-4" /> : <UserCheck className="size-4" />}
@@ -108,7 +108,7 @@ export function UsersPanel({ users, currentUserId }: { users: UserRow[]; current
   );
 }
 
-function CreateUserDialog() {
+function CreateUserDialog({ codeLogin }: { codeLogin: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState("STORE_OWNER");
@@ -124,7 +124,7 @@ function CreateUserDialog() {
     setErrors({});
     try {
       await api("/api/admin/users", {
-        body: { name: f.get("name"), email: f.get("email"), phone: f.get("phone") || null, role, regionStates: regions, teams: role === "STORE_OWNER" ? [] : teams, password: f.get("password") },
+        body: { name: f.get("name"), email: f.get("email"), phone: f.get("phone") || null, role, regionStates: regions, teams: role === "STORE_OWNER" ? [] : teams, password: f.get("password") || undefined },
       });
       toast.success("User created");
       setOpen(false);
@@ -148,7 +148,7 @@ function CreateUserDialog() {
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create user</DialogTitle>
-          <DialogDescription>Share the initial password with the user securely; they sign in with e-mail and password.</DialogDescription>
+          <DialogDescription>{codeLogin ? "They sign in with a code sent to this e-mail address. No password needed." : "Share the initial password with the user securely; they sign in with e-mail and password."}</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <div className="space-y-1.5">
@@ -206,11 +206,13 @@ function CreateUserDialog() {
               {errors.regionStates && <p className="text-xs text-destructive">{errors.regionStates}</p>}
             </div>
           )}
-          <div className="space-y-1.5">
-            <Label htmlFor="u-pw">Initial password</Label>
-            <Input id="u-pw" name="password" type="password" minLength={8} required autoComplete="new-password" />
-            {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
-          </div>
+          {!codeLogin && (
+            <div className="space-y-1.5">
+              <Label htmlFor="u-pw">Initial password</Label>
+              <Input id="u-pw" name="password" type="password" minLength={8} required autoComplete="new-password" />
+              {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
+            </div>
+          )}
           {errors._ && <p className="text-sm text-destructive">{errors._}</p>}
           <DialogFooter>
             <Button type="submit" disabled={busy}>

@@ -10,11 +10,11 @@ import { formatBytes } from "@/lib/format";
 import type { FileItem } from "./file-list";
 
 // Hosting limit: Vercel accepts request bodies up to ~4.5 MB. Photos are shrunk in the browser first.
-const MAX = 4.3 * 1024 * 1024;
+export const MAX = 4.3 * 1024 * 1024;
 const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
 
 /** Resizes large photos (max 2000 px, JPEG) so phone camera images upload quickly on mobile data. */
-async function shrinkImage(file: File): Promise<File> {
+export async function shrinkImage(file: File): Promise<File> {
   if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 1.5 * 1024 * 1024) return file;
   try {
     const bitmap = await createImageBitmap(file);
@@ -42,6 +42,7 @@ export function Uploader({
   hint,
   required,
   error,
+  hideEmpty,
 }: {
   moduleId: string;
   tag: string;
@@ -52,6 +53,8 @@ export function Uploader({
   hint?: string;
   required?: boolean;
   error?: string;
+  /** Don't show the "Nothing uploaded yet" box (the files are listed elsewhere). */
+  hideEmpty?: boolean;
 }) {
   const router = useRouter();
   const camRef = useRef<HTMLInputElement>(null);
@@ -151,7 +154,7 @@ export function Uploader({
             </li>
           ))}
         </ul>
-      ) : (
+      ) : hideEmpty ? null : (
         <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">{canEdit ? "Nothing uploaded yet." : "No files."}</p>
       )}
       {busy && !files.some((f) => f.id === busy) && <p className="text-xs text-muted-foreground">Uploading {busy}…</p>}

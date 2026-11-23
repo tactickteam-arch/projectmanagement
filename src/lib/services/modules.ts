@@ -7,7 +7,7 @@ import { can } from "@/lib/auth/permissions";
 import { addDays, formatDateOnly, parseDateOnly, todayInIndia } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { AppError, badRequest, conflict, forbidden, notFound } from "@/lib/errors";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatINR } from "@/lib/format";
 import { stateName } from "@/lib/india-states";
 import {
   afterActionSchema,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/module-rules";
 import { hqRecipients, notifyUsers, teamRecipients, teamRecipientsFor } from "@/lib/notify";
 import { planFrom, rolloutTarget } from "@/lib/scheduling";
+import { interiorsBudget, INTERIORS_COST_TYPES } from "@/lib/sop-rules";
 import { getStoreForUser, recalcStoreStatus } from "@/lib/services/stores";
 import { getTargetLaunchOffsetDays } from "@/lib/settings";
 import { isApproved, isDone, MODULE_STATUS_LABELS } from "@/lib/status";
@@ -92,8 +93,14 @@ export async function getModuleById(user: CurrentUser, moduleId: string) {
 
 export async function countCountingPhotos(storeModuleId: string, photoTag: string | null): Promise<number> {
   return prisma.attachment.count({
-    where: { storeModuleId, fileType: { startsWith: "image/" }, ...(photoTag ? { tag: photoTag } : {}) },
+    where: { storeModuleId, snagId: null, siteUpdateId: null, fileType: { startsWith: "image/" }, ...(photoTag ? { tag: photoTag } : {}) },
   });
+}
+
+/** Decided 21 Nov 2026: the soft launch waits until every snag is closed. */
+async function openSnagProblems(storeId: string): Promise<string[]> {
+  const open = await prisma.snag.count({ where: { storeId, status: { not: "CLOSED" } } });
+  return open ? [`${open} snag${open === 1 ? " is" : "s are"} not closed yet. Close every snag (Snags tab) before the soft launch.`] : [];
 }
 
 async function templateFor(moduleType: string) {
@@ -186,7 +193,9 @@ export async function updateModule(user: CurrentUser, storeId: string, moduleTyp
   const siblings = await siblingsOf(prisma, storeId);
   const names = await displayNames();
   const completing = next.status === "COMPLETED" && mod.status !== "COMPLETED";
-  const uploadedTags = completing ? (await prisma.attachment.findMany({ where: { storeModuleId: mod.id }, select: { tag: true } })).map((a) => a.tag ?? "document") : [];
+  const uploadedTags = completing ? (await prisma.attachment.findMany({ where: { storeModuleId: mod.id, snagId: null, siteUpdateId: null }, select: { tag: true, approvedAt: true } })).flatMap((a) =>
+        a.approvedAt ? [a.tag ?? "document", `final:${a.tag ?? "document"}`] : [a.tag ?? "document"],
+      ) : [];
   const errors = checkModuleRules({
     moduleType,
     current: mod,
@@ -198,7 +207,12 @@ export async function updateModule(user: CurrentUser, storeId: string, moduleTyp
     fields,
     details,
     uploadedTags,
-    sopProblems: completing ? sopCheckErrors(def?.checks, { areaSqft: store.carpetAreaSqft, details, siblings }) : [],
+    sopProblems: completing
+      ? [
+          ...sopCheckErrors(def?.checks, { areaSqft: store.carpetAreaSqft, details, siblings }),
+          ...(moduleType === SOFT_LAUNCH ? await openSnagProblems(storeId) : []),
+        ]
+      : [],
     requireActualEnd: def?.requireActualEnd,
   });
   if (Object.keys(errors).length) {
@@ -235,6 +249,22 @@ export async function updateModule(user: CurrentUser, storeId: string, moduleTyp
     };
     const d = diff(before, afterView as Record<string, unknown>);
     if (d) await logActivity(tx, { userId: user.id, storeId, storeModuleId: mod.id, action: "module.updated", ...d });
+
+    // Decided 21 Nov 2026: warn RK (and HQ) when the interiors cost first goes over the approved quotation.
+    if (INTERIORS_COST_TYPES.includes(moduleType) && Number(data.actualCost ?? 0) !== Number(mod.actualCost ?? 0)) {
+      const costs = await tx.storeModule.findMany({ where: { storeId }, select: { moduleType: true, actualCost: true, approvalStatus: true, details: true } });
+      const now = interiorsBudget(costs);
+      const was = interiorsBudget(costs.map((c) => (c.moduleType === moduleType ? { ...c, actualCost: mod.actualCost } : c)));
+      if (now.over > 0 && was.over === 0) {
+        const recipients = [...(await teamRecipients(tx, store, ["RK"])), ...(await hqRecipients(tx, store.state, { includeRegional: false }))];
+        await notifyUsers(tx, [...new Set(recipients)].filter((id) => id !== user.id), {
+          type: "cost_over_quote",
+          message: `${store.name}: interiors cost ${formatINR(now.actual)} is over the approved quotation ${formatINR(now.quote ?? 0)} by ${formatINR(now.over)} (after ${template.displayName}).`,
+          storeId,
+          storeModuleId: mod.id,
+        });
+      }
+    }
 
     // MOU point 11: the expected key date drives the T-7 work (until the keys are received).
     if (moduleType === LOCATION_FILING && !store.keyHandoverDate) {

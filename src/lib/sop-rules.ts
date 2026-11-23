@@ -100,3 +100,19 @@ export const PATTERNS = {
   ACCOUNT: { regex: "^[0-9]{9,18}$", message: "Bank account number must be 9–18 digits" },
   PHONE: { regex: "^\\+?[0-9][0-9 -]{8,14}[0-9]$", message: "Enter a valid phone number (at least 10 digits)" },
 } as const;
+
+/** Steps whose actual cost counts against the approved interiors quotation (its scope: furniture,
+ * electrical, AC, branding — plus the Interiors track). Decided 21 Nov 2026: warn RK when the
+ * actual cost goes over the approved quotation. */
+export const INTERIORS_COST_TYPES: readonly string[] = ["SITE_FURNITURE", "SITE_ELECTRICAL", "SITE_AC", "SITE_BRANDING", "INTERIORS"];
+
+type CostRow = { moduleType: string; actualCost: unknown; approvalStatus?: string; details?: unknown };
+
+/** The approved interiors quotation (null until Boss + CEO approve it) and the actual interiors cost so far. */
+export function interiorsBudget(mods: readonly CostRow[]): { quote: number | null; actual: number; over: number } {
+  const q = mods.find((m) => m.moduleType === "INTERIORS_QUOTE");
+  const amount = Number(((q?.details ?? {}) as Record<string, unknown>).quotationAmount);
+  const quote = q && q.approvalStatus === "APPROVED" && Number.isFinite(amount) && amount > 0 ? amount : null;
+  const actual = mods.filter((m) => INTERIORS_COST_TYPES.includes(m.moduleType)).reduce((t, m) => t + (Number(m.actualCost) || 0), 0);
+  return { quote, actual, over: quote === null ? 0 : Math.max(0, actual - quote) };
+}

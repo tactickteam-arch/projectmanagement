@@ -58,23 +58,34 @@ enum ApprovalStatus {
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  name         String
-  phone        String?  @unique
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  role         Role
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String
+  phone              String?   @unique
+  email              String    @unique
+  passwordHash       String    @map("password_hash")
+  role               Role
   /// Regional Manager / Team member scope: state codes (e.g. "KA", "TN"). Team member with none = all states.
-  regionStates String[] @default([]) @map("region_states")
+  regionStates       String[]  @default([]) @map("region_states")
   /// Teams from src/lib/teams.ts (e.g. "ACCOUNTS", "RK"). Decide which steps a user fills in or approves.
-  teams        String[] @default([])
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  teams              String[]  @default([])
+  isActive           Boolean   @default(true) @map("is_active")
+  /// E-mail sign-in code (decided 21 Nov 2026: e-mail code only). Only a hash is kept; the code
+  /// expires after 10 minutes and allows 5 tries.
+  loginCodeHash      String?   @map("login_code_hash")
+  loginCodeExpiresAt DateTime? @map("login_code_expires_at") @db.Timestamptz(6)
+  loginCodeSentAt    DateTime? @map("login_code_sent_at") @db.Timestamptz(6)
+  loginCodeAttempts  Int       @default(0) @map("login_code_attempts")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   ownedStores         Store[]        @relation("StoreOwner")
   approvedModules     StoreModule[]  @relation("ModuleApprover")
   updatedModules      StoreModule[]  @relation("ModuleUpdater")
   uploadedAttachments Attachment[]
+  approvedAttachments Attachment[]   @relation("AttachmentApprover")
+  raisedSnags         Snag[]         @relation("SnagRaiser")
+  fixedSnags          Snag[]         @relation("SnagFixer")
+  closedSnags         Snag[]         @relation("SnagCloser")
+  siteUpdates         SiteUpdate[]
   comments            Comment[]
   notifications       Notification[]
   activity            ActivityLog[]
@@ -83,38 +94,40 @@ model User {
 }
 
 model Store {
-  id               String         @id @default(uuid()) @db.Uuid
+  id                String         @id @default(uuid()) @db.Uuid
   /// SGM-<STATE>-<CITY>-<NNNN>, e.g. SGM-KA-BLR-0142
-  storeCode        String         @unique @map("store_code")
-  name             String
+  storeCode         String         @unique @map("store_code")
+  name              String
   /// State/UT code from the fixed list in src/lib/india-states.ts
-  state            String
-  city             String
-  area             String?
-  pincode          String?
-  address          String?
-  lat              Decimal?       @db.Decimal(9, 6)
-  lng              Decimal?       @db.Decimal(9, 6)
-  storeType        StoreType?     @map("store_type")
-  carpetAreaSqft   Int?           @map("carpet_area_sqft")
-  floor            Floor?
-  ownerId          String         @map("owner_id") @db.Uuid
-  owner            User           @relation("StoreOwner", fields: [ownerId], references: [id])
-  targetLaunchDate DateTime?      @map("target_launch_date") @db.Date
-  keyHandoverDate  DateTime?      @map("key_handover_date") @db.Date
+  state             String
+  city              String
+  area              String?
+  pincode           String?
+  address           String?
+  lat               Decimal?       @db.Decimal(9, 6)
+  lng               Decimal?       @db.Decimal(9, 6)
+  storeType         StoreType?     @map("store_type")
+  carpetAreaSqft    Int?           @map("carpet_area_sqft")
+  floor             Floor?
+  ownerId           String         @map("owner_id") @db.Uuid
+  owner             User           @relation("StoreOwner", fields: [ownerId], references: [id])
+  targetLaunchDate  DateTime?      @map("target_launch_date") @db.Date
+  keyHandoverDate   DateTime?      @map("key_handover_date") @db.Date
   /// Expected key handover (41-point MOU sheet, point 11). The T-7 work is planned back from it.
-  expectedKeyDate  DateTime?      @map("expected_key_date") @db.Date
+  expectedKeyDate   DateTime?      @map("expected_key_date") @db.Date
   /// Expected key date for which the T-7 intimation was sent (SOP slide 6).
-  preKeyNotifiedFor DateTime?     @map("pre_key_notified_for") @db.Date
-  actualLaunchDate DateTime?      @map("actual_launch_date") @db.Date
+  preKeyNotifiedFor DateTime?      @map("pre_key_notified_for") @db.Date
+  actualLaunchDate  DateTime?      @map("actual_launch_date") @db.Date
   /// Null until the first milestone (Location Finalised) is reached — see REQUIREMENTS.md Q-STATUS-NEW.
-  overallStatus    OverallStatus? @map("overall_status")
-  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  overallStatus     OverallStatus? @map("overall_status")
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   modules       StoreModule[]
   notifications Notification[]
   activity      ActivityLog[]
+  snags         Snag[]
+  siteUpdates   SiteUpdate[]
 
   @@index([ownerId])
   @@index([state, city])
@@ -123,22 +136,22 @@ model Store {
 }
 
 model ModuleTemplate {
-  id                     String  @id @default(uuid()) @db.Uuid
+  id                     String   @id @default(uuid()) @db.Uuid
   /// Stable key, e.g. "STORE_LOCATION". String (not enum) so modules can be added without a migration.
-  moduleType             String  @unique @map("module_type")
-  displayName            String  @map("display_name")
-  sortOrder              Int     @map("sort_order")
+  moduleType             String   @unique @map("module_type")
+  displayName            String   @map("display_name")
+  sortOrder              Int      @map("sort_order")
   /// Days from the step's schedule anchor (store created, expected keys or Day 0 — see src/modules).
-  defaultStartOffsetDays Int?    @map("default_start_offset_days")
-  defaultDurationDays    Int?    @map("default_duration_days")
-  fieldSchema            Json    @map("field_schema")
-  minPhotos              Int     @default(1) @map("min_photos")
+  defaultStartOffsetDays Int?     @map("default_start_offset_days")
+  defaultDurationDays    Int?     @map("default_duration_days")
+  fieldSchema            Json     @map("field_schema")
+  minPhotos              Int      @default(1) @map("min_photos")
   /// Teams that fill in this step ("STORE_OWNER" = the store's owner). SuperAdmin can always edit.
   editTeams              String[] @default([]) @map("edit_teams")
   /// Team that approves the step; null = the owning team marks it done itself.
   approverTeam           String?  @map("approver_team")
   /// Attachment tag that counts toward minPhotos; null = any photo on the module.
-  photoTag               String? @map("photo_tag")
+  photoTag               String?  @map("photo_tag")
 
   @@map("module_templates")
 }
@@ -193,6 +206,7 @@ model StoreModule {
   comments      Comment[]
   notifications Notification[]
   activity      ActivityLog[]
+  siteUpdates   SiteUpdate[]
 
   @@unique([storeId, moduleType])
   @@index([status, approvalStatus])
@@ -213,8 +227,21 @@ model Attachment {
   uploadedById  String      @map("uploaded_by") @db.Uuid
   uploadedBy    User        @relation(fields: [uploadedById], references: [id])
   uploadedAt    DateTime    @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  /// Design versions (store layout, sign board design): set when the design approver locks this
+  /// version as the final one. At most one final version per step and tag.
+  approvedAt    DateTime?   @map("approved_at") @db.Timestamptz(6)
+  approvedById  String?     @map("approved_by") @db.Uuid
+  approvedBy    User?       @relation("AttachmentApprover", fields: [approvedById], references: [id])
+  /// Set for snag photos/videos (tag snag_before / snag_after). Not counted as step files.
+  snagId        String?     @map("snag_id") @db.Uuid
+  snag          Snag?       @relation(fields: [snagId], references: [id], onDelete: Cascade)
+  /// Set for daily site photos. Not counted as step files.
+  siteUpdateId  String?     @map("site_update_id") @db.Uuid
+  siteUpdate    SiteUpdate? @relation(fields: [siteUpdateId], references: [id], onDelete: Cascade)
 
   @@index([storeModuleId])
+  @@index([snagId])
+  @@index([siteUpdateId])
   @@map("attachments")
 }
 
@@ -243,8 +270,11 @@ model Notification {
   message       String
   isRead        Boolean      @default(false) @map("is_read")
   createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// When an e-mail copy went out (decided 21 Nov 2026: every alert also by e-mail). Null = not sent yet.
+  emailedAt     DateTime?    @map("emailed_at") @db.Timestamptz(6)
 
   @@index([userId, isRead, createdAt])
+  @@index([emailedAt, createdAt])
   @@map("notifications")
 }
 
@@ -263,4 +293,64 @@ model ActivityLog {
 
   @@index([storeId, createdAt])
   @@map("activity_log")
+}
+
+enum SnagStatus {
+  OPEN
+  FIXED
+  CLOSED
+}
+
+/// A defect found at key handover or before the soft launch (decided 21 Nov 2026). Fixed with an
+/// "after" photo or video, then closed by someone who has seen it. Launch waits for every snag.
+model Snag {
+  id         String     @id @default(uuid()) @db.Uuid
+  storeId    String     @map("store_id") @db.Uuid
+  store      Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  /// "KEY_HANDOVER" or "PRE_LAUNCH"
+  stage      String
+  title      String
+  details    String?
+  /// Department that fixes it (a key from src/lib/teams.ts)
+  team       String
+  dueDate    DateTime?  @map("due_date") @db.Date
+  status     SnagStatus @default(OPEN)
+  raisedById String     @map("raised_by") @db.Uuid
+  raisedBy   User       @relation("SnagRaiser", fields: [raisedById], references: [id])
+  raisedAt   DateTime   @default(now()) @map("raised_at") @db.Timestamptz(6)
+  fixedById  String?    @map("fixed_by") @db.Uuid
+  fixedBy    User?      @relation("SnagFixer", fields: [fixedById], references: [id])
+  fixedAt    DateTime?  @map("fixed_at") @db.Timestamptz(6)
+  fixNote    String?    @map("fix_note")
+  closedById String?    @map("closed_by") @db.Uuid
+  closedBy   User?      @relation("SnagCloser", fields: [closedById], references: [id])
+  closedAt   DateTime?  @map("closed_at") @db.Timestamptz(6)
+  /// Why the last fix was not accepted (sent back to the team)
+  returnNote String?    @map("return_note")
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  attachments Attachment[]
+
+  @@index([storeId, status])
+  @@map("snags")
+}
+
+/// Daily site photos during the on-site work (decided 21 Nov 2026: Manju and the department doing
+/// the work post them). Photos are attachments with site_update_id set.
+model SiteUpdate {
+  id            String      @id @default(uuid()) @db.Uuid
+  storeId       String      @map("store_id") @db.Uuid
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeModuleId String      @map("store_module_id") @db.Uuid
+  storeModule   StoreModule @relation(fields: [storeModuleId], references: [id], onDelete: Cascade)
+  date          DateTime    @db.Date
+  note          String?
+  createdById   String      @map("created_by") @db.Uuid
+  createdBy     User        @relation(fields: [createdById], references: [id])
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  attachments Attachment[]
+
+  @@index([storeId, date])
+  @@map("site_updates")
 }

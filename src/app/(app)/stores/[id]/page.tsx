@@ -7,6 +7,8 @@ import { ProgressBar } from "@/components/progress-bar";
 import { LaunchFlow } from "@/components/launch-flow";
 import { StatusBadge } from "@/components/status-badge";
 import { EditStoreDialog, StatusOverride } from "@/components/store-actions";
+import { SitePhotos } from "@/components/site-photos";
+import { SnagPanel } from "@/components/snag-panel";
 import { Timeline } from "@/components/timeline";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,8 +19,10 @@ import { formatDateOnly, todayInIndia } from "@/lib/dates";
 import { formatDate, formatINR } from "@/lib/format";
 import { stateName } from "@/lib/india-states";
 import { getStoreDetailForPage, type StoreDetail } from "@/lib/queries";
+import { listSiteUpdates, siteUpdateSteps } from "@/lib/services/site-updates";
+import { listSnags, SNAG_TEAMS } from "@/lib/services/snags";
 import type { AccessSubject } from "@/lib/auth/access";
-import { shiftDate } from "@/lib/sop-rules";
+import { interiorsBudget, shiftDate } from "@/lib/sop-rules";
 import { teamLabel } from "@/lib/teams";
 import { cn } from "@/lib/utils";
 
@@ -29,12 +33,17 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
   const { id } = await params;
   const store = await getStoreDetailForPage(user, id);
   const today = formatDateOnly(todayInIndia());
+  const snags = await listSnags(user, id);
+  const siteUpdates = await listSiteUpdates(user, id);
+  const photoSteps = await siteUpdateSteps(user, store);
+  const openSnags = snags.filter((s) => s.status !== "CLOSED").length;
+  const snagTeams = SNAG_TEAMS.map((k) => ({ key: k, label: teamLabel(k) }));
   const setup = store.modules;
-  const tracks = store.modules.filter((m) => m.group === "track" || m.group === "site" || m.group === "launch");
   const moduleNames = Object.fromEntries(store.modules.map((m) => [m.id, m.displayName]));
   const allFiles = store.modules.flatMap((m) => m.attachments.map((a) => ({ ...a, module: m.displayName })));
   const estTotal = setup.reduce((t, m) => t + (m.estCost ?? 0), 0);
   const actTotal = setup.reduce((t, m) => t + (m.actualCost ?? 0), 0);
+  const interiors = interiorsBudget(store.modules);
   const home = user.role === "STORE_OWNER" ? { label: "My stores", href: "/owner" } : user.role === "TEAM_MEMBER" ? { label: "My tasks", href: "/tasks" } : { label: "Dashboard", href: "/hq" };
 
   return (
@@ -119,6 +128,12 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
             <p className="text-sm text-muted-foreground">Cost (actual / estimated)</p>
             <p className="mt-1 text-lg font-semibold tabular-nums">{formatINR(actTotal)}</p>
             <p className="text-xs text-muted-foreground">of {formatINR(estTotal)} estimated</p>
+            {interiors.quote !== null && (
+              <p className={cn("mt-1 text-xs", interiors.over > 0 ? "font-medium text-red-600" : "text-muted-foreground")}>
+                Interiors {formatINR(interiors.actual)} of {formatINR(interiors.quote)} quote
+                {interiors.over > 0 && ` · ${formatINR(interiors.over)} over`}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -129,6 +144,8 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
         <TabsList className="flex-wrap">
           <TabsTrigger value="flow">Launch flow</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="snags">Snags{openSnags ? ` (${openSnags} open)` : ""}</TabsTrigger>
+          <TabsTrigger value="site">Site photos</TabsTrigger>
           <TabsTrigger value="costs">Costs</TabsTrigger>
           <TabsTrigger value="files">Files ({allFiles.length})</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -142,12 +159,32 @@ export default async function StorePage({ params }: PageProps<"/stores/[id]">) {
         <TabsContent value="timeline" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Stage 6 &amp; 7 from Day 0: planned vs actual</CardTitle>
+              <CardTitle className="text-base">All 21 steps: planned vs actual</CardTitle>
             </CardHeader>
             <CardContent>
-              <Timeline modules={tracks} handover={store.keyHandoverDate} targetLaunch={store.targetLaunchDate} today={today} />
+              <Timeline modules={store.modules} handover={store.keyHandoverDate} expectedKey={store.expectedKeyDate} targetLaunch={store.targetLaunchDate} today={today} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="snags" className="mt-4">
+          <SnagPanel storeId={store.id} snags={snags} canRaise={!store.actualLaunchDate} teams={snagTeams} defaultDue={shiftDate(today, 3)} defaultStage={store.keyHandoverDate && (store.daysSinceHandover ?? 0) > 3 ? "PRE_LAUNCH" : "KEY_HANDOVER"} />
+        </TabsContent>
+
+        <TabsContent value="site" className="mt-4">
+          <SitePhotos
+            storeId={store.id}
+            updates={siteUpdates}
+            steps={photoSteps}
+            today={today}
+            status={
+              !store.keyHandoverDate
+                ? "Daily site photos start once the keys are received."
+                : store.actualLaunchDate
+                  ? "The store has launched; site photos are closed."
+                  : "Only Manju and the departments doing the on-site work post site photos."
+            }
+          />
         </TabsContent>
 
         <TabsContent value="costs" className="mt-4">
