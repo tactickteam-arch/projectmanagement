@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, homePathFor } from "@/lib/auth/dal";
 import { loginMode } from "@/lib/auth/login-code";
+import { BuiltBy } from "@/components/built-by";
 import { LoginForm } from "./login-form";
 
 export const metadata = { title: "Sign in" };
@@ -24,7 +25,10 @@ export default async function LoginPage() {
             Store owners update progress from site; HQ sees status, delays and costs for every store across India on one dashboard.
           </p>
         </div>
-        <p className="text-xs text-sidebar-foreground/60">Internal tool · Store Launch Tracker</p>
+        <div className="flex items-center justify-between gap-4 text-xs text-sidebar-foreground/60">
+          <span>Store Launch Tracker · made for Sangeetha Mobiles</span>
+          <BuiltBy dark />
+        </div>
       </section>
       <section className="flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-sm">
@@ -34,6 +38,9 @@ export default async function LoginPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
           <p className="mt-1 mb-6 text-sm text-muted-foreground">{mode === "code" ? "We e-mail you a 6-digit code. No password needed." : "Use your e-mail and password."}</p>
           <LoginForm showDemoHint={isDev} mode={mode} demoPasswords={mode === "code" && process.env.DEMO_PASSWORD_LOGIN === "1"} />
+          <div className="mt-10 flex justify-center lg:hidden">
+            <BuiltBy />
+          </div>
         </div>
       </section>
     </main>

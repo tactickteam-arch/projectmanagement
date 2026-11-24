@@ -4,6 +4,7 @@ import { Menu } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { BuiltBy } from "./built-by";
 import { NavLinks, type NavItem } from "./nav-links";
 
 export function MobileNav({ items }: { items: NavItem[] }) {
@@ -22,6 +23,9 @@ export function MobileNav({ items }: { items: NavItem[] }) {
         <nav className="space-y-0.5 p-2">
           <NavLinks items={items} variant="sheet" onNavigate={() => setOpen(false)} />
         </nav>
+        <div className="mt-auto border-t px-4 py-3">
+          <BuiltBy />
+        </div>
       </SheetContent>
     </Sheet>
   );

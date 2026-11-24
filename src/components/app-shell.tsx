@@ -8,6 +8,7 @@ import type { CurrentUser } from "@/lib/auth/dal";
 import { NavLinks, type NavItem } from "./nav-links";
 import { MobileNav } from "./mobile-nav";
 import { UserMenu } from "./user-menu";
+import { BuiltBy } from "./built-by";
 
 function navFor(user: CurrentUser, approvals: { canApprove: boolean; count: number }): NavItem[] {
   if (user.role === "STORE_OWNER") {
@@ -84,7 +85,12 @@ export function AppShell({ user, unread, approvals, children }: { user: CurrentU
             </div>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-5 pb-24 md:pb-10">{children}</main>
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-5 pb-24 md:pb-10">
+          {children}
+          <div className="mt-10 flex justify-center">
+            <BuiltBy />
+          </div>
+        </main>
         <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="Main">
           <NavLinks items={nav} variant="bottom" />
         </nav>
@@ -104,6 +110,7 @@ export function AppShell({ user, unread, approvals, children }: { user: CurrentU
         <div className="border-t border-sidebar-border px-4 py-3 text-xs text-sidebar-foreground/70">
           <p className="truncate font-medium text-sidebar-foreground">{user.name}</p>
           <p className="truncate">{roleLabel}</p>
+          <BuiltBy dark className="mt-3" />
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
