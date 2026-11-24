@@ -67,7 +67,7 @@ export function NotificationList({ items }: { items: NotificationItem[] }) {
         ))}
       </ul>
       <p className="text-center text-xs text-muted-foreground">
-        In-app notifications only in this demo. E-mail and WhatsApp are planned for a later phase.{" "}
+        Each alert is also sent to your e-mail once e-mail sending is switched on.{" "}
         <Link href="/" className="underline">
           Back home
         </Link>
